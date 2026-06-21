@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #0044CC;
+  --color-primary-hover: #2266FF;
+  --color-primary-light: #EBF1FF;
+  --color-bg-dark: #0D0F12;
+  --color-surface-dark: #161920;
+  --color-border-dark: #232733;
+
+  --font-sans: "Outfit", "Inter", system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-[#0D0F12] text-slate-100 antialiased font-sans min-h-screen;
+  }
+}
