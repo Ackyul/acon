@@ -275,6 +275,12 @@ export default function Dashboard() {
         
         // If no products selected yet, automatically open catalog selection checklist
         if (!data.allIds || data.allIds.length === 0) {
+          if (brandId) {
+            const prodRes = await fetch(`${API_BASE}/brands/${brandId}/products`);
+            if (prodRes.ok) {
+              setProducts(await prodRes.json());
+            }
+          }
           setConfiguringCatalog(true);
         }
       }
@@ -614,6 +620,24 @@ export default function Dashboard() {
       console.error('Error creating section:', e);
     } finally {
       setCreatingSection(false);
+    }
+  };
+
+  const handleDeleteSection = async (sectionId: number) => {
+    if (!brand || !window.confirm('¿Seguro que deseas eliminar esta sección de venta? Se borrarán todas sus ventas asociadas.')) return;
+    try {
+      const res = await fetch(`${API_BASE}/sections/${sectionId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        fetchSections(String(brand.id));
+      } else {
+        const errData = await res.json();
+        alert(errData.error || 'Error al eliminar la sección.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error de red al eliminar la sección.');
     }
   };
 
@@ -968,13 +992,27 @@ export default function Dashboard() {
                                     <p className="text-sm font-black text-emerald-400 mt-1">S/. {sec.total_sales.toFixed(2)}</p>
                                   </div>
                                   
-                                  <button
-                                    onClick={() => setSelectedSection(sec)}
-                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#0044CC] hover:bg-[#2266FF] text-white text-xs font-bold transition-all cursor-pointer"
-                                  >
-                                    <span>Vender aquí</span>
-                                    <ArrowLeft className="w-3.5 h-3.5 rotate-180" />
-                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    {brand?.role === 'owner' && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteSection(sec.id);
+                                        }}
+                                        className="flex items-center justify-center p-2 rounded-xl border border-white/[0.08] hover:border-red-500/30 bg-white/[0.02] hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-all cursor-pointer"
+                                        title="Eliminar sección"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => setSelectedSection(sec)}
+                                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#0044CC] hover:bg-[#2266FF] text-white text-xs font-bold transition-all cursor-pointer"
+                                    >
+                                      <span>Vender aquí</span>
+                                      <ArrowLeft className="w-3.5 h-3.5 rotate-180" />
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             ))}
