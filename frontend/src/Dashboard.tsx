@@ -21,7 +21,8 @@ import {
   Sliders,
   PlusCircle,
   Calendar,
-  Percent
+  Percent,
+  Search
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001/api';
@@ -112,6 +113,8 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('sales');
   const [salesSubTab, setSalesSubTab] = useState<SalesSubTab>('sections');
   const [warehouseSubTab, setWarehouseSubTab] = useState<WarehouseSubTab>('internal');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [configSearchQuery, setConfigSearchQuery] = useState('');
 
   // Business state
   const [products, setProducts] = useState<Product[]>([]);
@@ -1188,11 +1191,24 @@ export default function Dashboard() {
                               </div>
                               
                               <button 
-                                onClick={() => setConfiguringCatalog(false)}
+                                onClick={() => { setConfiguringCatalog(false); setConfigSearchQuery(''); }}
                                 className="p-1 rounded bg-white/[0.04] text-slate-400 hover:text-white cursor-pointer"
                               >
                                 <X className="w-4 h-4" />
                               </button>
+                            </div>
+
+                            <div className="relative">
+                              <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <Search className="w-3.5 h-3.5 text-slate-500" />
+                              </span>
+                              <input
+                                type="text"
+                                placeholder="Buscar en catálogo general..."
+                                value={configSearchQuery}
+                                onChange={e => setConfigSearchQuery(e.target.value)}
+                                className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#0044CC]/50 transition-colors"
+                              />
                             </div>
 
                             {loadingProducts ? (
@@ -1204,26 +1220,35 @@ export default function Dashboard() {
                               <p className="text-xs text-slate-500 text-center py-6">El catálogo general de la marca está vacío.</p>
                             ) : (
                               <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-                                {products.map(p => {
-                                  const isChecked = sectionProductIds.includes(p.id);
-                                  return (
-                                    <div
-                                      key={p.id}
-                                      onClick={() => toggleCatalogProduct(p.id)}
-                                      className="flex items-center justify-between p-2.5 rounded-lg border border-white/[0.04] bg-white/[0.01] hover:bg-white/[0.03] cursor-pointer"
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <div className={`w-4 h-4 rounded border flex items-center justify-center
-                                          ${isChecked ? 'bg-emerald-500 border-emerald-500' : 'border-white/20'}`}
-                                        >
-                                          {isChecked && <Check className="w-3 h-3 text-white" />}
-                                        </div>
-                                        <span className="text-xs text-slate-200 font-semibold">{p.name}</span>
-                                      </div>
-                                      <span className="text-xs text-slate-500">S/. {p.price}</span>
-                                    </div>
+                                {(() => {
+                                  const filtered = products.filter(p => 
+                                    p.name.toLowerCase().includes(configSearchQuery.toLowerCase()) || 
+                                    (p.category && p.category.toLowerCase().includes(configSearchQuery.toLowerCase()))
                                   );
-                                })}
+                                  if (filtered.length === 0) {
+                                    return <p className="text-[11px] text-slate-500 text-center py-6">No se encontraron productos.</p>;
+                                  }
+                                  return filtered.map(p => {
+                                    const isChecked = sectionProductIds.includes(p.id);
+                                    return (
+                                      <div
+                                        key={p.id}
+                                        onClick={() => toggleCatalogProduct(p.id)}
+                                        className="flex items-center justify-between p-2.5 rounded-lg border border-white/[0.04] bg-white/[0.01] hover:bg-white/[0.03] cursor-pointer"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <div className={`w-4 h-4 rounded border flex items-center justify-center
+                                            ${isChecked ? 'bg-emerald-500 border-emerald-500' : 'border-white/20'}`}
+                                          >
+                                            {isChecked && <Check className="w-3 h-3 text-white" />}
+                                          </div>
+                                          <span className="text-xs text-slate-200 font-semibold">{p.name}</span>
+                                        </div>
+                                        <span className="text-xs text-slate-500">S/. {p.price}</span>
+                                      </div>
+                                    );
+                                  });
+                                })()}
                               </div>
                             )}
 
@@ -1246,12 +1271,25 @@ export default function Dashboard() {
                         ) : (
                           /* Standard grid view */
                           <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Catálogo Feria</span>
+                            <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                              <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold shrink-0">Catálogo Feria</span>
                               
+                              <div className="relative flex-1 max-w-xs">
+                                <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                  <Search className="w-3.5 h-3.5 text-slate-500" />
+                                </span>
+                                <input
+                                  type="text"
+                                  placeholder="Buscar producto..."
+                                  value={searchQuery}
+                                  onChange={e => setSearchQuery(e.target.value)}
+                                  className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#0044CC]/50 transition-colors"
+                                />
+                              </div>
+
                               <button
                                 onClick={handleOpenCatalogConfig}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] text-[10px] text-slate-300 hover:text-white transition-all cursor-pointer font-semibold"
+                                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] text-[10px] text-slate-300 hover:text-white transition-all cursor-pointer font-semibold shrink-0"
                               >
                                 <Sliders className="w-3 h-3" />
                                 <span>Ajustar Catálogo ({activeSectionProducts.length} activos)</span>
@@ -1271,43 +1309,75 @@ export default function Dashboard() {
                               </div>
                             ) : (
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-1">
-                                {activeSectionProducts.map(product => {
-                                  const inCart = cart.find(i => i.product.id === product.id);
-                                  const isLocal = brand.type === 'local';
-                                  return (
-                                    <div
-                                      key={product.id}
-                                      onClick={() => addToCart(product)}
-                                      className="group relative flex items-center gap-3 p-3 rounded-xl border border-white/[0.06] hover:border-white/[0.12] transition-all duration-200 cursor-pointer overflow-hidden"
-                                      style={{ 
-                                        background: inCart 
-                                          ? isLocal ? 'rgba(124,58,237,0.06)' : 'rgba(0,68,204,0.06)' 
-                                          : 'rgba(255,255,255,0.015)' 
-                                      }}
-                                    >
-                                      {product.image ? (
-                                        <img src={product.image} alt={product.name} className="w-11 h-11 rounded-lg object-cover ring-1 ring-white/10 shrink-0" />
-                                      ) : (
-                                        <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0"
-                                          style={{ background: isLocal ? 'rgba(124,58,237,0.12)' : 'rgba(0,68,204,0.12)' }}>
-                                          <Package className={`w-4.5 h-4.5 ${isLocal ? 'text-violet-400' : 'text-[#6699FF]'}`} />
-                                        </div>
-                                      )}
-                                      <div className="min-w-0 flex-1">
-                                        <h4 className="font-semibold text-xs text-white truncate leading-tight group-hover:text-[#6699FF] transition-colors">{product.name}</h4>
-                                        <p className="text-[10px] text-slate-500 truncate mt-0.5">{product.category || 'Otros'}</p>
-                                        <p className={`text-xs font-bold mt-1 ${isLocal ? 'text-violet-400' : 'text-[#6699FF]'}`}>S/. {Number(product.price).toFixed(2)}</p>
-                                      </div>
-                                      <div className={`w-7.5 h-7.5 rounded-lg flex items-center justify-center shrink-0 transition-all duration-200
-                                        ${inCart
-                                          ? isLocal ? 'bg-violet-600 text-white shadow-md' : 'bg-[#0044CC] text-white shadow-md'
-                                          : 'bg-white/[0.04] text-slate-500 group-hover:text-white group-hover:bg-white/[0.08]'}`}
-                                      >
-                                        {inCart ? <span className="text-[11px] font-black">{inCart.quantity}</span> : <Plus className="w-3.5 h-3.5" />}
-                                      </div>
-                                    </div>
+                                {(() => {
+                                  const filtered = activeSectionProducts.filter(p =>
+                                    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    (p.category && p.category.toLowerCase().includes(searchQuery.toLowerCase()))
                                   );
-                                })}
+                                  if (filtered.length === 0) {
+                                    return <p className="text-xs text-slate-500 text-center py-12">No se encontraron productos coincidentes.</p>;
+                                  }
+                                  return filtered.map(product => {
+                                    const inCart = cart.find(i => i.product.id === product.id);
+                                    const isLocal = brand.type === 'local';
+                                    return (
+                                      <div
+                                        key={product.id}
+                                        onClick={() => addToCart(product)}
+                                        className="group relative flex items-center gap-3 p-3 rounded-xl border border-white/[0.06] hover:border-white/[0.12] transition-all duration-200 cursor-pointer overflow-hidden"
+                                        style={{ 
+                                          background: inCart 
+                                            ? isLocal ? 'rgba(124,58,237,0.06)' : 'rgba(0,68,204,0.06)' 
+                                            : 'rgba(255,255,255,0.015)' 
+                                        }}
+                                      >
+                                        {product.image ? (
+                                          <img src={product.image} alt={product.name} className="w-11 h-11 rounded-lg object-cover ring-1 ring-white/10 shrink-0" />
+                                        ) : (
+                                          <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0"
+                                            style={{ background: isLocal ? 'rgba(124,58,237,0.12)' : 'rgba(0,68,204,0.12)' }}>
+                                            <Package className={`w-4.5 h-4.5 ${isLocal ? 'text-violet-400' : 'text-[#6699FF]'}`} />
+                                          </div>
+                                        )}
+                                        <div className="min-w-0 flex-1">
+                                          <h4 className="font-semibold text-xs text-white truncate leading-tight group-hover:text-[#6699FF] transition-colors">{product.name}</h4>
+                                          <p className="text-[10px] text-slate-500 truncate mt-0.5">{product.category || 'Otros'}</p>
+                                          <p className={`text-xs font-bold mt-1 ${isLocal ? 'text-violet-400' : 'text-[#6699FF]'}`}>S/. {Number(product.price).toFixed(2)}</p>
+                                        </div>
+                                        <div 
+                                          className="flex items-center gap-1 shrink-0"
+                                          onClick={e => e.stopPropagation()}
+                                        >
+                                          {inCart ? (
+                                            <div className="flex items-center bg-black/40 border border-white/[0.08] rounded-xl p-0.5 gap-0.5 shadow-inner">
+                                              <button
+                                                onClick={() => removeFromCart(product.id)}
+                                                className="w-6.5 h-6.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] flex items-center justify-center text-slate-400 hover:text-red-400 transition-all cursor-pointer"
+                                              >
+                                                <Minus className="w-2.5 h-2.5" />
+                                              </button>
+                                              <span className="w-5 text-center text-[10px] font-black text-white">{inCart.quantity}</span>
+                                              <button
+                                                onClick={() => addToCart(product)}
+                                                className="w-6.5 h-6.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all cursor-pointer"
+                                              >
+                                                <Plus className="w-2.5 h-2.5" />
+                                              </button>
+                                            </div>
+                                          ) : (
+                                            <button
+                                              onClick={() => addToCart(product)}
+                                              className={`w-7.5 h-7.5 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer
+                                                bg-white/[0.04] text-slate-500 group-hover:text-white group-hover:bg-white/[0.08]`}
+                                            >
+                                              <Plus className="w-3.5 h-3.5" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  });
+                                })()}
                               </div>
                             )}
                           </div>
@@ -1908,7 +1978,7 @@ export default function Dashboard() {
 
       {/* ── Floating Mobile Cart Drawer Trigger ── */}
       {cart.length > 0 && activeTab === 'sales' && selectedSection && !configuringCatalog && (
-        <div className="md:hidden fixed bottom-16 left-4 right-4 z-40 animate-pulse">
+        <div className="lg:hidden fixed bottom-16 left-4 right-4 z-40">
           <button
             onClick={() => setShowCartMobile(true)}
             className="w-full flex items-center justify-between px-4 py-3.5 rounded-2xl text-white font-bold text-xs shadow-lg flex-row cursor-pointer"
