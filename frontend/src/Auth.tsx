@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Loader2, ArrowRight, AlertCircle, Eye, EyeOff, Lock, User } from 'lucide-react';
+import { Loader2, ArrowRight, AlertCircle, Eye, EyeOff, Lock, User } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001/api';
 

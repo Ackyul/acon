@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Building2,
   ShoppingBag,
   History,
   Boxes,
@@ -14,17 +13,14 @@ import {
   Trash2,
   ChevronRight,
   Receipt,
-  Sparkles,
   BarChart3,
   X,
   LogOut,
   ArrowLeft,
   Users,
   Sliders,
-  Edit,
   PlusCircle,
   Calendar,
-  User,
   Percent
 } from 'lucide-react';
 

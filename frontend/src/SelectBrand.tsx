@@ -4,13 +4,11 @@ import {
   Building2, 
   Plus, 
   Link2, 
-  Sparkles, 
   Loader2, 
   ArrowRight, 
   AlertCircle, 
   Search, 
   LogOut, 
-  Check, 
   Briefcase 
 } from 'lucide-react';
 
