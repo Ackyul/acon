@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Building2,
   ShoppingBag,
@@ -16,10 +17,11 @@ import {
   Sparkles,
   BarChart3,
   X,
+  LogOut,
 } from 'lucide-react';
 
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001/api';
 
 interface AourumBrand {
   id: number;
@@ -40,7 +42,7 @@ interface Product {
 }
 
 interface InternalItem {
-  id: string;
+  id: number;
   name: string;
   stock: number;
   category: string;
@@ -74,42 +76,36 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 function Dashboard() {
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('sales');
   const [brandDropdownOpen, setBrandDropdownOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [aourumBrands, setAourumBrands] = useState<AourumBrand[]>([]);
   const [selectedBrand, setSelectedBrand] = useState<AourumBrand | null>(null);
+  const [aconBrandId, setAconBrandId] = useState<number | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [loadingBrands, setLoadingBrands] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [internalInventory, setInternalInventory] = useState<InternalItem[]>([
-    { id: '1', name: 'Stickers Holográficos', stock: 120, category: 'Marketing' },
-    { id: '2', name: 'Sobres Kraft Medianos',  stock: 45,  category: 'Empaque'   },
-    { id: '3', name: 'Etiquetas de Cartón',    stock: 200, category: 'Empaque'   },
-    { id: '4', name: 'Cinta de Embalar',       stock: 8,   category: 'Empaque'   },
-  ]);
-  const [salesHistory, setSalesHistory] = useState<Sale[]>([
-    {
-      id: 'SALE-101',
-      date: new Date(Date.now() - 3600000 * 2).toLocaleString('es-PE'),
-      total: 25.00,
-      items: [
-        { product_name: 'Ritual Digestión',  unit_price: 10.00, quantity: 2 },
-        { product_name: 'Sticker Logo Promo', unit_price: 2.50,  quantity: 2 },
-      ],
-    },
-  ]);
+  const [internalInventory, setInternalInventory] = useState<InternalItem[]>([]);
+  const [salesHistory, setSalesHistory] = useState<Sale[]>([]);
   const [newItemName, setNewItemName] = useState('');
   const [newItemStock, setNewItemStock] = useState<number>(0);
   const [newItemCategory, setNewItemCategory] = useState('Empaque');
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
 
-  useEffect(() => { fetchBrands(); }, []);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    if (selectedBrand) { fetchProducts(selectedBrand.id); setBrandDropdownOpen(false); }
-    else { setProducts([]); }
-  }, [selectedBrand]);
+    const user = localStorage.getItem('acon_user');
+    const name = localStorage.getItem('acon_user_name');
+    if (!user) {
+      navigate('/auth');
+    } else {
+      setCurrentUser(name || user);
+      fetchBrands();
+    }
+  }, []);
 
   const fetchBrands = async () => {
     setLoadingBrands(true);
@@ -129,6 +125,91 @@ function Dashboard() {
     finally { setLoadingProducts(false); }
   };
 
+  const linkBrand = async (aourumBrand: AourumBrand) => {
+    try {
+      const res = await fetch(`${API_BASE}/brands/link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aourum_brand_id: aourumBrand.id, name: aourumBrand.name })
+      });
+      if (res.ok) {
+        const linked = await res.json();
+        return linked.id;
+      }
+    } catch (e) {
+      console.error('Error linking brand:', e);
+    }
+    return null;
+  };
+
+  const fetchSalesHistory = async (localBrandId: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/sales?acon_brand_id=${localBrandId}`);
+      if (res.ok) {
+        const data = await res.json();
+        const formatted = data.map((sale: any) => ({
+          id: `SALE-${sale.id}`,
+          date: new Date(sale.created_at).toLocaleString('es-PE'),
+          total: Number(sale.total),
+          items: sale.items.map((item: any) => ({
+            product_name: item.product_name,
+            unit_price: Number(item.unit_price),
+            quantity: item.quantity
+          }))
+        }));
+        setSalesHistory(formatted);
+      }
+    } catch (e) {
+      console.error('Error fetching sales:', e);
+    }
+  };
+
+  const fetchInternalInventory = async (localBrandId: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/internal-items?acon_brand_id=${localBrandId}`);
+      if (res.ok) {
+        setInternalInventory(await res.json());
+      }
+    } catch (e) {
+      console.error('Error fetching internal inventory:', e);
+    }
+  };
+
+  const handleSelectBrand = async (brand: AourumBrand) => {
+    setSelectedBrand(brand);
+    setBrandDropdownOpen(false);
+    setSearchTerm('');
+    setProducts([]);
+    setSalesHistory([]);
+    setInternalInventory([]);
+    setCart([]);
+
+    fetchProducts(brand.id);
+    const localId = await linkBrand(brand);
+    if (localId) {
+      setAconBrandId(localId);
+      fetchSalesHistory(localId);
+      fetchInternalInventory(localId);
+    }
+  };
+
+  const handleDeselectBrand = () => {
+    setSelectedBrand(null);
+    setAconBrandId(null);
+    setProducts([]);
+    setSalesHistory([]);
+    setInternalInventory([]);
+    setCart([]);
+    setBrandDropdownOpen(false);
+    setSearchTerm('');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('acon_user');
+    localStorage.removeItem('acon_user_name');
+    navigate('/auth');
+  };
+
   const addToCart = (product: Product) =>
     setCart(prev => {
       const ex = prev.find(i => i.product.id === product.id);
@@ -145,30 +226,96 @@ function Dashboard() {
       return prev.filter(i => i.product.id !== productId);
     });
 
-  const checkout = () => {
-    if (!cart.length) return;
+  const checkout = async () => {
+    if (!cart.length || !aconBrandId) return;
     const total = cart.reduce((s, i) => s + i.product.price * i.quantity, 0);
-    const newSale: Sale = {
-      id: `SALE-${Math.floor(1000 + Math.random() * 9000)}`,
-      date: new Date().toLocaleString('es-PE'),
+    const salePayload = {
+      acon_brand_id: aconBrandId,
+      created_by: currentUser || 'Vendedor',
       total,
-      items: cart.map(i => ({ product_name: i.product.name, unit_price: i.product.price, quantity: i.quantity })),
+      items: cart.map(i => ({
+        aourum_product_id: i.product.id,
+        product_name: i.product.name,
+        unit_price: i.product.price,
+        quantity: i.quantity
+      }))
     };
-    setSalesHistory(p => [newSale, ...p]);
-    setCart([]);
-    setCheckoutSuccess(true);
-    setTimeout(() => setCheckoutSuccess(false), 2800);
+
+    try {
+      const res = await fetch(`${API_BASE}/sales`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(salePayload)
+      });
+      if (res.ok) {
+        setCart([]);
+        setCheckoutSuccess(true);
+        setTimeout(() => setCheckoutSuccess(false), 2800);
+        fetchSalesHistory(aconBrandId);
+      } else {
+        alert('Error al registrar la venta');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error de red al registrar la venta');
+    }
   };
 
-  const addInternalItem = (e: React.FormEvent) => {
+  const addInternalItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newItemName.trim()) return;
-    setInternalInventory(p => [...p, { id: Date.now().toString(), name: newItemName, stock: newItemStock, category: newItemCategory }]);
-    setNewItemName(''); setNewItemStock(0);
+    if (!newItemName.trim() || !aconBrandId) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/internal-items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          acon_brand_id: aconBrandId,
+          name: newItemName,
+          category: newItemCategory,
+          stock: newItemStock
+        })
+      });
+      if (res.ok) {
+        setNewItemName('');
+        setNewItemStock(0);
+        fetchInternalInventory(aconBrandId);
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const updateInternalStock = (id: string, delta: number) =>
-    setInternalInventory(p => p.map(i => i.id === id ? { ...i, stock: Math.max(0, i.stock + delta) } : i));
+  const updateInternalStock = async (id: number, currentStock: number, delta: number) => {
+    if (!aconBrandId) return;
+    const newStock = Math.max(0, currentStock + delta);
+    try {
+      const res = await fetch(`${API_BASE}/internal-items/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stock: newStock })
+      });
+      if (res.ok) {
+        fetchInternalInventory(aconBrandId);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const deleteInternalItem = async (id: number) => {
+    if (!aconBrandId || !window.confirm('¿Seguro que deseas eliminar este insumo?')) return;
+    try {
+      const res = await fetch(`${API_BASE}/internal-items/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        fetchInternalInventory(aconBrandId);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const cartTotal    = cart.reduce((s, i) => s + i.product.price * i.quantity, 0);
   const historyTotal = salesHistory.reduce((s, i) => s + i.total, 0);
@@ -202,35 +349,43 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Brand picker dropdown */}
-        <div className="relative">
-          {/* Trigger */}
-          <button
-            onClick={() => setBrandDropdownOpen(o => !o)}
-            className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-sm border transition-all cursor-pointer"
-            style={selectedBrand
-              ? { background: 'rgba(0,68,204,0.08)', borderColor: 'rgba(0,68,204,0.25)' }
-              : { background: 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.2)' }
-            }>
-            {selectedBrand ? (
-              <>
-                {selectedBrand.logo
-                  ? <img src={selectedBrand.logo} alt="" className="w-5 h-5 rounded-full object-cover ring-1 ring-white/10" />
-                  : <div className="w-5 h-5 rounded-full bg-[#0044CC]/30 flex items-center justify-center text-[#6699FF] text-[10px] font-bold">
-                      {selectedBrand.name[0]}
-                    </div>
-                }
-                <span className="font-medium text-slate-200 max-w-[150px] truncate">{selectedBrand.name}</span>
-                <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${brandDropdownOpen ? 'rotate-90' : ''}`} />
-              </>
-            ) : (
-              <>
-                <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
-                <span className="text-xs text-amber-400 font-medium">Vincular catálogo</span>
-                <ChevronRight className={`w-3.5 h-3.5 text-amber-400/60 transition-transform ${brandDropdownOpen ? 'rotate-90' : ''}`} />
-              </>
-            )}
-          </button>
+        <div className="flex items-center gap-4">
+          {currentUser && (
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/[0.05] bg-white/[0.02] text-xs text-slate-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{currentUser}</span>
+            </div>
+          )}
+
+          {/* Brand picker dropdown */}
+          <div className="relative">
+            {/* Trigger */}
+            <button
+              onClick={() => setBrandDropdownOpen(o => !o)}
+              className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-sm border transition-all cursor-pointer"
+              style={selectedBrand
+                ? { background: 'rgba(0,68,204,0.08)', borderColor: 'rgba(0,68,204,0.25)' }
+                : { background: 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.2)' }
+              }>
+              {selectedBrand ? (
+                <>
+                  {selectedBrand.logo
+                    ? <img src={selectedBrand.logo} alt="" className="w-5 h-5 rounded-full object-cover ring-1 ring-white/10" />
+                    : <div className="w-5 h-5 rounded-full bg-[#0044CC]/30 flex items-center justify-center text-[#6699FF] text-[10px] font-bold">
+                        {selectedBrand.name[0]}
+                      </div>
+                  }
+                  <span className="font-medium text-slate-200 max-w-[150px] truncate">{selectedBrand.name}</span>
+                  <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${brandDropdownOpen ? 'rotate-90' : ''}`} />
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-xs text-amber-400 font-medium">Vincular catálogo</span>
+                  <ChevronRight className={`w-3.5 h-3.5 text-amber-400/60 transition-transform ${brandDropdownOpen ? 'rotate-90' : ''}`} />
+                </>
+              )}
+            </button>
 
           {/* Dropdown panel */}
           {brandDropdownOpen && (
@@ -249,25 +404,47 @@ function Dashboard() {
                 </button>
               </div>
 
+              {/* Search input */}
+              <div className="px-3 py-2 border-b border-white/[0.04]">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Escribe el nombre de la marca..."
+                  className="w-full bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#0044CC]/50 transition-colors"
+                  autoFocus
+                />
+              </div>
+
               {/* Brand list */}
-              <div className="p-2 max-h-[320px] overflow-y-auto space-y-1">
+              <div className="p-2 max-h-[260px] overflow-y-auto space-y-1">
                 {loadingBrands ? (
                   <div className="flex items-center justify-center gap-2 py-8 text-slate-500">
                     <Loader2 className="w-4 h-4 animate-spin text-[#2266FF]" />
                     <span className="text-xs">Conectando con Aourum...</span>
                   </div>
-                ) : aourumBrands.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Building2 className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-                    <p className="text-xs text-slate-500">No se encontraron marcas</p>
-                    <p className="text-[10px] text-slate-700 mt-1">Backend en <span className="font-mono">localhost:3001</span></p>
+                ) : searchTerm.trim() === '' ? (
+                  <div className="text-center py-8 text-slate-600">
+                    <Building2 className="w-8 h-8 text-slate-800 mx-auto mb-2" />
+                    <p className="text-xs font-medium">Escribe para buscar una marca...</p>
                   </div>
-                ) : (
-                  aourumBrands.map(brand => {
+                ) : (() => {
+                  const filteredBrands = aourumBrands.filter(brand =>
+                    brand.name.toLowerCase().includes(searchTerm.toLowerCase())
+                  );
+                  if (filteredBrands.length === 0) {
+                    return (
+                      <div className="text-center py-8 text-slate-600">
+                        <Building2 className="w-8 h-8 text-slate-800 mx-auto mb-2" />
+                        <p className="text-xs">No se encontraron marcas parecidas</p>
+                      </div>
+                    );
+                  }
+                  return filteredBrands.map(brand => {
                     const active = selectedBrand?.id === brand.id;
                     return (
                       <div key={brand.id}
-                        onClick={() => { setSelectedBrand(brand); setBrandDropdownOpen(false); }}
+                        onClick={() => handleSelectBrand(brand)}
                         className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all group"
                         style={{
                           background: active ? 'rgba(0,68,204,0.12)' : 'transparent',
@@ -291,20 +468,31 @@ function Dashboard() {
                         )}
                       </div>
                     );
-                  })
-                )}
+                  });
+                })()}
               </div>
 
               {/* Footer: desvincular */}
               {selectedBrand && (
                 <div className="px-4 py-3 border-t border-white/[0.06]">
-                  <button onClick={() => { setSelectedBrand(null); setBrandDropdownOpen(false); }}
+                  <button onClick={handleDeselectBrand}
                     className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-red-500/20 hover:bg-red-500/10 text-red-400 text-xs font-medium transition-all cursor-pointer">
                     <X className="w-3 h-3" /> Desvincular marca
                   </button>
                 </div>
               )}
             </div>
+          )}
+          </div>
+
+          {currentUser && (
+            <button
+              onClick={handleLogout}
+              className="flex items-center justify-center p-2 rounded-xl border border-white/[0.08] hover:border-red-500/30 bg-white/[0.02] hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-all cursor-pointer"
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           )}
         </div>
       </header>
@@ -549,21 +737,21 @@ function Dashboard() {
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-2">
-                            <button onClick={() => updateInternalStock(item.id, -1)}
+                            <button onClick={() => updateInternalStock(item.id, item.stock, -1)}
                               className="w-7 h-7 rounded-lg bg-white/[0.05] hover:bg-white/[0.09] flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer">
                               <Minus className="w-3 h-3" />
                             </button>
                             <span className={`text-sm font-bold min-w-[28px] text-center ${item.stock < 10 ? 'text-red-400' : 'text-white'}`}>
                               {item.stock}
                             </span>
-                            <button onClick={() => updateInternalStock(item.id, 1)}
+                            <button onClick={() => updateInternalStock(item.id, item.stock, 1)}
                               className="w-7 h-7 rounded-lg bg-white/[0.05] hover:bg-[#0044CC]/30 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer">
                               <Plus className="w-3 h-3" />
                             </button>
                           </div>
                         </td>
                         <td className="px-5 py-4 text-right">
-                          <button onClick={() => setInternalInventory(p => p.filter(i => i.id !== item.id))}
+                          <button onClick={() => deleteInternalItem(item.id)}
                             className="w-8 h-8 rounded-xl bg-red-500/[0.08] hover:bg-red-500/20 flex items-center justify-center text-red-500/60 hover:text-red-400 transition-all cursor-pointer ml-auto">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

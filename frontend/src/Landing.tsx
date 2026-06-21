@@ -108,7 +108,7 @@ export default function Landing() {
         </div>
 
         <button
-          onClick={() => navigate('/dashboard')}
+          onClick={() => navigate('/auth')}
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all cursor-pointer"
           style={{
             background: 'rgba(0,68,204,0.15)',
@@ -164,7 +164,7 @@ export default function Landing() {
         <div className="flex flex-col sm:flex-row items-center gap-4">
           <button
             id="cta-enter"
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/auth')}
             className="group flex items-center gap-3 px-8 py-4 rounded-2xl text-white font-bold text-base transition-all duration-200 cursor-pointer relative overflow-hidden"
             style={{
               background: 'linear-gradient(135deg, #0044CC 0%, #2266FF 100%)',
