@@ -37,10 +37,11 @@ export default function Auth() {
     }
 
     setLoading(true);
+    const normalizedUsername = username.trim().toLowerCase();
     const endpoint = isLogin ? '/auth/login' : '/auth/register';
     const payload = isLogin
-      ? { username: username.trim(), password }
-      : { username: username.trim(), password, first_name: firstName.trim(), last_name: lastName.trim() };
+      ? { username: normalizedUsername, password }
+      : { username: normalizedUsername, password, first_name: firstName.trim(), last_name: lastName.trim() };
 
     try {
       const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -59,8 +60,8 @@ export default function Auth() {
       localStorage.setItem('acon_user', data.username);
       localStorage.setItem('acon_user_name', `${data.first_name} ${data.last_name}`);
       
-      // Redirigir al dashboard
-      navigate('/dashboard');
+      // Redirigir a selección de marca
+      navigate('/select-brand');
     } catch (err: any) {
       setError(err.message || 'Error de conexión con el servidor.');
     } finally {

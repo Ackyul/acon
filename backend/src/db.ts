@@ -44,14 +44,7 @@ export const aourumSupabase = createClient(aourumUrl || '', aourumKey || '');
 export async function initDb() {
   try {
     await query(`
-      DROP TABLE IF EXISTS acon_sale_items CASCADE;
-      DROP TABLE IF EXISTS acon_sales CASCADE;
-      DROP TABLE IF EXISTS acon_internal_items CASCADE;
-      DROP TABLE IF EXISTS acon_products CASCADE;
-      DROP TABLE IF EXISTS acon_brands CASCADE;
-      DROP TABLE IF EXISTS acon_users CASCADE;
-
-      CREATE TABLE acon_users (
+      CREATE TABLE IF NOT EXISTS acon_users (
         id SERIAL PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
         first_name VARCHAR(255) NOT NULL,
@@ -60,7 +53,7 @@ export async function initDb() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE TABLE acon_brands (
+      CREATE TABLE IF NOT EXISTS acon_brands (
         id SERIAL PRIMARY KEY,
         aourum_brand_id INTEGER UNIQUE,
         name VARCHAR(255) NOT NULL,
@@ -68,7 +61,15 @@ export async function initDb() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE TABLE acon_products (
+      CREATE TABLE IF NOT EXISTS acon_brand_collaborators (
+        id SERIAL PRIMARY KEY,
+        acon_brand_id INTEGER REFERENCES acon_brands(id) ON DELETE CASCADE,
+        username VARCHAR(255) REFERENCES acon_users(username) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(acon_brand_id, username)
+      );
+
+      CREATE TABLE IF NOT EXISTS acon_products (
         id SERIAL PRIMARY KEY,
         acon_brand_id INTEGER REFERENCES acon_brands(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
@@ -79,7 +80,7 @@ export async function initDb() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE TABLE acon_internal_items (
+      CREATE TABLE IF NOT EXISTS acon_internal_items (
         id SERIAL PRIMARY KEY,
         acon_brand_id INTEGER REFERENCES acon_brands(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
@@ -89,15 +90,31 @@ export async function initDb() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE TABLE acon_sales (
+      CREATE TABLE IF NOT EXISTS acon_sections (
         id SERIAL PRIMARY KEY,
         acon_brand_id INTEGER REFERENCES acon_brands(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        created_by VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS acon_section_products (
+        id SERIAL PRIMARY KEY,
+        section_id INTEGER REFERENCES acon_sections(id) ON DELETE CASCADE,
+        product_id INTEGER NOT NULL,
+        UNIQUE(section_id, product_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS acon_sales (
+        id SERIAL PRIMARY KEY,
+        acon_brand_id INTEGER REFERENCES acon_brands(id) ON DELETE CASCADE,
+        section_id INTEGER REFERENCES acon_sections(id) ON DELETE CASCADE,
         created_by VARCHAR(255) NOT NULL,
         total NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE TABLE acon_sale_items (
+      CREATE TABLE IF NOT EXISTS acon_sale_items (
         id SERIAL PRIMARY KEY,
         sale_id INTEGER REFERENCES acon_sales(id) ON DELETE CASCADE,
         aourum_product_id INTEGER,
@@ -106,8 +123,9 @@ export async function initDb() {
         quantity INTEGER NOT NULL DEFAULT 1
       );
     `);
-    console.log('✅ Base de datos Acon inicializada correctamente con el nuevo esquema.');
+    console.log('✅ Base de datos Acon inicializada correctamente.');
   } catch (error) {
     console.error('❌ Error inicializando base de datos Acon:', error);
   }
 }
+

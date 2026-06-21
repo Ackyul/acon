@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: acon-backend
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        sync: false
+      - key: AOURUM_SUPABASE_URL
+        sync: false
+      - key: AOURUM_SUPABASE_ANON_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
