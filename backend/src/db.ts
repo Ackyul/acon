@@ -58,6 +58,8 @@ export async function initDb() {
         aourum_brand_id INTEGER UNIQUE,
         name VARCHAR(255) NOT NULL,
         owner_username VARCHAR(255) REFERENCES acon_users(username) ON DELETE CASCADE,
+        sales_enabled BOOLEAN DEFAULT true,
+        inventory_enabled BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -123,6 +125,13 @@ export async function initDb() {
         quantity INTEGER NOT NULL DEFAULT 1
       );
     `);
+
+    // Migraciones rápidas para bases de datos existentes
+    await query(`
+      ALTER TABLE acon_brands ADD COLUMN IF NOT EXISTS sales_enabled BOOLEAN DEFAULT true;
+      ALTER TABLE acon_brands ADD COLUMN IF NOT EXISTS inventory_enabled BOOLEAN DEFAULT true;
+    `);
+
     console.log('✅ Base de datos Acon inicializada correctamente.');
   } catch (error) {
     console.error('❌ Error inicializando base de datos Acon:', error);

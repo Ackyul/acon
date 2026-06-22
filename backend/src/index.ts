@@ -138,7 +138,7 @@ app.get('/api/brands/my', async (req, res) => {
   try {
     // Obtener las marcas de Neon (locales y de Aourum) propias o donde es colaborador
     const result = await query(
-      `SELECT DISTINCT b.id, b.aourum_brand_id, b.name, b.owner_username,
+      `SELECT DISTINCT b.id, b.aourum_brand_id, b.name, b.owner_username, b.sales_enabled, b.inventory_enabled,
              (CASE WHEN b.owner_username = $1 THEN 'owner' ELSE 'collaborator' END) as user_role
        FROM acon_brands b
        LEFT JOIN acon_brand_collaborators c ON b.id = c.acon_brand_id
@@ -168,14 +168,20 @@ app.get('/api/brands/my', async (req, res) => {
           category: matchingAourum?.category,
           owner_username: aconBrand.owner_username,
           type: 'aourum',
-          role: aconBrand.user_role
+          role: aconBrand.user_role,
+          sales_enabled: aconBrand.sales_enabled,
+          inventory_enabled: aconBrand.inventory_enabled
         });
       } else {
         brands.push({
           id: aconBrand.id,
           aourum_brand_id: null,
           name: aconBrand.name,
-          type: 'local'
+          owner_username: aconBrand.owner_username,
+          type: 'local',
+          role: aconBrand.user_role,
+          sales_enabled: aconBrand.sales_enabled,
+          inventory_enabled: aconBrand.inventory_enabled
         });
       }
     }
@@ -189,15 +195,18 @@ app.get('/api/brands/my', async (req, res) => {
 
 // Crear marca local
 app.post('/api/brands/create-local', async (req, res) => {
-  const { name, owner_username } = req.body;
+  const { name, owner_username, sales_enabled, inventory_enabled } = req.body;
   if (!name || !owner_username) {
     return res.status(400).json({ error: 'name y owner_username son requeridos' });
   }
 
   try {
+    const salesVal = sales_enabled !== undefined ? sales_enabled : true;
+    const inventoryVal = inventory_enabled !== undefined ? inventory_enabled : true;
+
     const result = await query(
-      'INSERT INTO acon_brands (name, owner_username) VALUES ($1, $2) RETURNING *',
-      [name.trim(), owner_username]
+      'INSERT INTO acon_brands (name, owner_username, sales_enabled, inventory_enabled) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name.trim(), owner_username, salesVal, inventoryVal]
     );
     return res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -208,7 +217,7 @@ app.post('/api/brands/create-local', async (req, res) => {
 
 // Vincular marca de Aourum (Asignar)
 app.post('/api/brands/link-aourum', async (req, res) => {
-  const { aourum_brand_id, name, owner_username } = req.body;
+  const { aourum_brand_id, name, owner_username, sales_enabled, inventory_enabled } = req.body;
   if (!aourum_brand_id || !name || !owner_username) {
     return res.status(400).json({ error: 'aourum_brand_id, name y owner_username son requeridos' });
   }
@@ -224,9 +233,12 @@ app.post('/api/brands/link-aourum', async (req, res) => {
       return res.status(400).json({ error: 'Esta marca de Aourum ya ha sido vinculada por otro usuario.' });
     }
 
+    const salesVal = sales_enabled !== undefined ? sales_enabled : true;
+    const inventoryVal = inventory_enabled !== undefined ? inventory_enabled : true;
+
     const result = await query(
-      'INSERT INTO acon_brands (aourum_brand_id, name, owner_username) VALUES ($1, $2, $3) RETURNING *',
-      [aourum_brand_id, name.trim(), owner_username]
+      'INSERT INTO acon_brands (aourum_brand_id, name, owner_username, sales_enabled, inventory_enabled) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [aourum_brand_id, name.trim(), owner_username, salesVal, inventoryVal]
     );
 
     return res.status(201).json(result.rows[0]);
@@ -325,7 +337,7 @@ app.get('/api/brands/detail/:id', async (req, res) => {
     }
 
     const role = checkRole.rows[0].user_role;
-    const brandRes = await query('SELECT id, aourum_brand_id, name, owner_username FROM acon_brands WHERE id = $1', [id]);
+    const brandRes = await query('SELECT id, aourum_brand_id, name, owner_username, sales_enabled, inventory_enabled FROM acon_brands WHERE id = $1', [id]);
     const brand = brandRes.rows[0];
 
     if (brand.aourum_brand_id !== null) {
@@ -344,7 +356,9 @@ app.get('/api/brands/detail/:id', async (req, res) => {
         category: aourumBrand?.category,
         owner_username: brand.owner_username,
         type: 'aourum',
-        role
+        role,
+        sales_enabled: brand.sales_enabled,
+        inventory_enabled: brand.inventory_enabled
       });
     } else {
       return res.json({
@@ -353,7 +367,9 @@ app.get('/api/brands/detail/:id', async (req, res) => {
         name: brand.name,
         owner_username: brand.owner_username,
         type: 'local',
-        role
+        role,
+        sales_enabled: brand.sales_enabled,
+        inventory_enabled: brand.inventory_enabled
       });
     }
   } catch (error) {
@@ -387,6 +403,46 @@ app.delete('/api/brands/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting brand:', error);
     return res.status(500).json({ error: 'Error al eliminar la marca.' });
+  }
+});
+
+// Actualizar características/módulos de una marca (Owner only)
+app.patch('/api/brands/:id/features', async (req, res) => {
+  const { id } = req.params;
+  const { owner_username, sales_enabled, inventory_enabled } = req.body;
+
+  if (!owner_username) {
+    return res.status(400).json({ error: 'owner_username es requerido' });
+  }
+
+  if (sales_enabled === undefined || inventory_enabled === undefined) {
+    return res.status(400).json({ error: 'sales_enabled e inventory_enabled son requeridos' });
+  }
+
+  if (!sales_enabled && !inventory_enabled) {
+    return res.status(400).json({ error: 'Debes seleccionar al menos un módulo (Ventas o Almacén).' });
+  }
+
+  try {
+    // 1. Verificar que el solicitante sea el propietario
+    const ownerRes = await query('SELECT owner_username FROM acon_brands WHERE id = $1', [id]);
+    if (ownerRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Marca no encontrada.' });
+    }
+    if (ownerRes.rows[0].owner_username !== owner_username) {
+      return res.status(403).json({ error: 'Solo el propietario de la marca puede configurar sus características.' });
+    }
+
+    // 2. Actualizar la marca
+    const result = await query(
+      'UPDATE acon_brands SET sales_enabled = $1, inventory_enabled = $2 WHERE id = $3 RETURNING *',
+      [sales_enabled, inventory_enabled, id]
+    );
+
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating brand features:', error);
+    return res.status(500).json({ error: 'Error al actualizar las características de la marca.' });
   }
 });
 

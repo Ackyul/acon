@@ -10,7 +10,9 @@ import {
   Search, 
   LogOut, 
   Briefcase,
-  Trash2
+  Trash2,
+  Settings,
+  X
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001/api';
@@ -24,6 +26,8 @@ interface Brand {
   category?: string;
   type: 'local' | 'aourum';
   role: 'owner' | 'collaborator';
+  sales_enabled: boolean;
+  inventory_enabled: boolean;
 }
 
 interface AourumBrand {
@@ -53,6 +57,17 @@ export default function SelectBrand() {
   const [linkingAourumId, setLinkingAourumId] = useState<number | null>(null);
 
   const [error, setError] = useState('');
+
+  // Module preferences (sales tracking vs warehouse/inventory)
+  const [localSalesEnabled, setLocalSalesEnabled] = useState(true);
+  const [localInventoryEnabled, setLocalInventoryEnabled] = useState(true);
+  const [aourumSalesEnabled, setAourumSalesEnabled] = useState(true);
+  const [aourumInventoryEnabled, setAourumInventoryEnabled] = useState(true);
+
+  // Editing brand modules configuration states
+  const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
+  const [editSalesEnabled, setEditSalesEnabled] = useState(true);
+  const [editInventoryEnabled, setEditInventoryEnabled] = useState(true);
   
   const navigate = useNavigate();
 
@@ -107,7 +122,12 @@ export default function SelectBrand() {
       const res = await fetch(`${API_BASE}/brands/create-local`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: localName.trim(), owner_username: currentUser })
+        body: JSON.stringify({ 
+          name: localName.trim(), 
+          owner_username: currentUser,
+          sales_enabled: localSalesEnabled,
+          inventory_enabled: localInventoryEnabled
+        })
       });
       const data = await res.json();
       if (res.ok) {
@@ -135,7 +155,9 @@ export default function SelectBrand() {
         body: JSON.stringify({ 
           aourum_brand_id: brand.id, 
           name: brand.name, 
-          owner_username: currentUser 
+          owner_username: currentUser,
+          sales_enabled: aourumSalesEnabled,
+          inventory_enabled: aourumInventoryEnabled
         })
       });
       const data = await res.json();
@@ -175,6 +197,37 @@ export default function SelectBrand() {
       }
     } catch (e) {
       setError('Error de red al eliminar la marca.');
+    }
+  };
+
+  const handleStartEditFeatures = (brand: Brand) => {
+    setEditingBrand(brand);
+    setEditSalesEnabled(brand.sales_enabled);
+    setEditInventoryEnabled(brand.inventory_enabled);
+  };
+
+  const handleSaveFeatures = async (brand: Brand) => {
+    if (!currentUser) return;
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/brands/${brand.id}/features`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner_username: currentUser,
+          sales_enabled: editSalesEnabled,
+          inventory_enabled: editInventoryEnabled,
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEditingBrand(null);
+        fetchMyBrands(currentUser);
+      } else {
+        setError(data.error || 'Error al actualizar las características.');
+      }
+    } catch (e) {
+      setError('Error de red al actualizar las características.');
     }
   };
 
@@ -270,7 +323,7 @@ export default function SelectBrand() {
               {myBrands.map((brand) => (
                 <div
                   key={brand.id}
-                  className="p-5 rounded-2xl border border-white/[0.06] bg-white/[0.015] hover:bg-white/[0.03] hover:border-white/[0.1] transition-all flex flex-col justify-between group"
+                  className="p-5 rounded-2xl border border-white/[0.06] bg-white/[0.015] hover:bg-white/[0.03] hover:border-white/[0.1] transition-all flex flex-col justify-between group min-h-[200px]"
                 >
                   <div className="flex items-start gap-4.5 mb-5">
                     {brand.logo ? (
@@ -299,6 +352,16 @@ export default function SelectBrand() {
                         >
                           {brand.role === 'owner' ? 'Propietario' : 'Colaborador'}
                         </span>
+                        {brand.sales_enabled && (
+                          <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-semibold tracking-wide uppercase bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/20">
+                            Ventas
+                          </span>
+                        )}
+                        {brand.inventory_enabled && (
+                          <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-semibold tracking-wide uppercase bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/20">
+                            Almacén
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -312,13 +375,22 @@ export default function SelectBrand() {
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                     {brand.role === 'owner' && (
-                      <button
-                        onClick={() => handleDeleteBrand(brand)}
-                        className="px-3 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 hover:text-red-300 transition-all cursor-pointer flex items-center justify-center shrink-0"
-                        title="Eliminar marca"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <>
+                        <button
+                          onClick={() => handleStartEditFeatures(brand)}
+                          className="px-3 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] text-slate-400 hover:text-white transition-all cursor-pointer flex items-center justify-center shrink-0"
+                          title="Configurar características"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBrand(brand)}
+                          className="px-3 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 hover:text-red-300 transition-all cursor-pointer flex items-center justify-center shrink-0"
+                          title="Eliminar marca"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -344,22 +416,45 @@ export default function SelectBrand() {
               </p>
             </div>
 
-            <form onSubmit={handleCreateLocal} className="flex gap-2 items-center">
-              <input
-                type="text"
-                value={localName}
-                onChange={(e) => setLocalName(e.target.value)}
-                placeholder="Nombre de la marca"
-                className="flex-1 bg-white/[0.03] border border-white/[0.07] rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/40 transition-colors"
-                disabled={creatingLocal}
-              />
-              <button
-                type="submit"
-                disabled={creatingLocal || !localName.trim()}
-                className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:hover:bg-violet-600 text-white text-xs font-bold transition-colors cursor-pointer shrink-0"
-              >
-                {creatingLocal ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Crear'}
-              </button>
+            <form onSubmit={handleCreateLocal} className="flex flex-col gap-3">
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={localName}
+                  onChange={(e) => setLocalName(e.target.value)}
+                  placeholder="Nombre de la marca"
+                  className="flex-1 bg-white/[0.03] border border-white/[0.07] rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/40 transition-colors"
+                  disabled={creatingLocal}
+                />
+                <button
+                  type="submit"
+                  disabled={creatingLocal || !localName.trim() || (!localSalesEnabled && !localInventoryEnabled)}
+                  className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:hover:bg-violet-600 text-white text-xs font-bold transition-colors cursor-pointer shrink-0"
+                >
+                  {creatingLocal ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Crear'}
+                </button>
+              </div>
+
+              <div className="flex gap-4 items-center pl-1">
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={localSalesEnabled}
+                    onChange={(e) => setLocalSalesEnabled(e.target.checked)}
+                    className="accent-violet-600 rounded border-white/20 bg-white/[0.03] w-4 h-4"
+                  />
+                  <span>Conteo de Ventas</span>
+                </label>
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={localInventoryEnabled}
+                    onChange={(e) => setLocalInventoryEnabled(e.target.checked)}
+                    className="accent-violet-600 rounded border-white/20 bg-white/[0.03] w-4 h-4"
+                  />
+                  <span>Almacén / Inventario</span>
+                </label>
+              </div>
             </form>
           </div>
 
@@ -378,6 +473,28 @@ export default function SelectBrand() {
             </div>
 
             <div className="space-y-3">
+              {/* Opciones de módulos para Aourum */}
+              <div className="flex gap-4 items-center pl-1 pb-1">
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={aourumSalesEnabled}
+                    onChange={(e) => setAourumSalesEnabled(e.target.checked)}
+                    className="accent-[#0044CC] rounded border-white/20 bg-white/[0.03] w-4 h-4"
+                  />
+                  <span>Conteo de Ventas</span>
+                </label>
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={aourumInventoryEnabled}
+                    onChange={(e) => setAourumInventoryEnabled(e.target.checked)}
+                    className="accent-[#0044CC] rounded border-white/20 bg-white/[0.03] w-4 h-4"
+                  />
+                  <span>Almacén / Inventario</span>
+                </label>
+              </div>
+
               {/* Search input */}
               <div className="relative">
                 <Search className="absolute inset-y-0 left-3 flex items-center text-slate-600 w-3.5 h-3.5 my-auto" />
@@ -406,8 +523,13 @@ export default function SelectBrand() {
                     filteredAourum.map((brand) => (
                       <div
                         key={brand.id}
-                        onClick={() => linkingAourumId === null && handleLinkAourum(brand)}
-                        className="flex items-center justify-between p-2 rounded-lg hover:bg-white/[0.04] cursor-pointer transition-colors group"
+                        onClick={() => 
+                          linkingAourumId === null && 
+                          (aourumSalesEnabled || aourumInventoryEnabled) && 
+                          handleLinkAourum(brand)
+                        }
+                        className={`flex items-center justify-between p-2 rounded-lg hover:bg-white/[0.04] transition-colors group
+                          ${(!aourumSalesEnabled && !aourumInventoryEnabled) ? 'opacity-40 pointer-events-none' : 'cursor-pointer'}`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           {brand.logo ? (
@@ -422,7 +544,10 @@ export default function SelectBrand() {
                             <p className="text-[9px] text-slate-500 truncate">{brand.category || 'Sin categoría'}</p>
                           </div>
                         </div>
-                        <button className="p-1 rounded-lg hover:bg-[#0044CC]/20 text-slate-500 hover:text-[#6699FF] transition-colors shrink-0">
+                        <button 
+                          disabled={!aourumSalesEnabled && !aourumInventoryEnabled}
+                          className="p-1 rounded-lg hover:bg-[#0044CC]/20 text-slate-500 hover:text-[#6699FF] transition-colors shrink-0 disabled:opacity-40"
+                        >
                           {linkingAourumId === brand.id ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
@@ -436,10 +561,84 @@ export default function SelectBrand() {
               )}
             </div>
           </div>
-
         </div>
-
       </main>
+
+      {/* ── Personalization Modal ── */}
+      {editingBrand && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+          <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0C0F16] p-6 space-y-6 relative overflow-hidden"
+               style={{ boxShadow: '0 20px 50px rgba(0,0,0,0.7)' }}>
+            
+            {/* Ambient blob inside modal */}
+            <div className="pointer-events-none absolute -top-20 -right-20 w-40 h-40 rounded-full opacity-[0.15]"
+              style={{ background: 'radial-gradient(circle, #0044CC 0%, transparent 70%)' }} />
+
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+              <div className="flex items-center gap-2">
+                <Settings className="w-4.5 h-4.5 text-[#6699FF]" />
+                <h3 className="text-base font-bold text-white uppercase tracking-wider">Personalización</h3>
+              </div>
+              <button
+                onClick={() => setEditingBrand(null)}
+                className="w-7 h-7 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Selecciona qué módulos deseas habilitar para la marca <strong className="text-white">"{editingBrand.name}"</strong>:
+              </p>
+
+              <div className="space-y-3 pt-2">
+                <label className="flex items-center gap-3 p-3.5 rounded-xl border border-white/[0.05] bg-white/[0.015] hover:bg-white/[0.03] transition-colors cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={editSalesEnabled}
+                    onChange={(e) => setEditSalesEnabled(e.target.checked)}
+                    className="accent-[#0044CC] rounded border-white/20 bg-white/[0.03] w-4.5 h-4.5 shrink-0"
+                  />
+                  <div>
+                    <p className="text-xs font-bold text-white">Conteo de Ventas</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Controla transacciones, ferias, stands y ve el historial de ganancias.</p>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 p-3.5 rounded-xl border border-white/[0.05] bg-white/[0.015] hover:bg-white/[0.03] transition-colors cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={editInventoryEnabled}
+                    onChange={(e) => setEditInventoryEnabled(e.target.checked)}
+                    className="accent-[#0044CC] rounded border-white/20 bg-white/[0.03] w-4.5 h-4.5 shrink-0"
+                  />
+                  <div>
+                    <p className="text-xs font-bold text-white">Almacén / Inventario</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Administra los productos de catálogo central y controla los insumos internos.</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setEditingBrand(null)}
+                className="flex-1 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-400 hover:text-white text-xs font-bold transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleSaveFeatures(editingBrand)}
+                disabled={!editSalesEnabled && !editInventoryEnabled}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#0044CC] to-[#2266FF] text-white text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
+              >
+                Guardar cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

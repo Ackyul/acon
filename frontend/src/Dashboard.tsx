@@ -37,6 +37,8 @@ interface BrandDetails {
   owner_username: string;
   type: 'local' | 'aourum';
   role: 'owner' | 'collaborator';
+  sales_enabled: boolean;
+  inventory_enabled: boolean;
 }
 
 interface Product {
@@ -231,6 +233,11 @@ export default function Dashboard() {
       }
       const data = await res.json();
       setBrand(data);
+      if (!data.sales_enabled && data.inventory_enabled) {
+        setActiveTab('inventory');
+      } else {
+        setActiveTab('sales');
+      }
     } catch (err: any) {
       setError(err.message || 'Error al conectar con el servidor.');
       setTimeout(() => navigate('/select-brand'), 3000);
@@ -829,56 +836,60 @@ export default function Dashboard() {
           <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold px-3 mb-1.5">Módulos</p>
           
           {/* Tab Button 1: Conteo de Ventas */}
-          <button
-            onClick={() => setActiveTab('sales')}
-            className={`group w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-xs font-semibold tracking-wide uppercase transition-all duration-200 cursor-pointer text-left
-              ${activeTab === 'sales' ? 'text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'}`}
-            style={activeTab === 'sales' ? {
-              background: brand.type === 'aourum'
-                ? 'linear-gradient(135deg, rgba(0,68,204,0.3) 0%, rgba(34,102,255,0.1) 100%)'
-                : 'linear-gradient(135deg, rgba(124,58,237,0.3) 0%, rgba(167,139,250,0.1) 100%)',
-              boxShadow: brand.type === 'aourum'
-                ? 'inset 0 0 0 1px rgba(0,68,204,0.35)'
-                : 'inset 0 0 0 1px rgba(124,58,237,0.35)'
-            } : {}}
-          >
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
-              ${activeTab === 'sales' 
-                ? brand.type === 'aourum' ? 'bg-[#0044CC] text-white' : 'bg-violet-600 text-white'
-                : 'bg-white/[0.04] group-hover:bg-white/[0.08]'}`}>
-              <ShoppingBag className="w-4 h-4" />
-            </div>
-            <span className="flex-1">Conteo de Ventas</span>
-            {activeTab === 'sales' && (
-              <ChevronRight className={`w-3.5 h-3.5 ${brand.type === 'aourum' ? 'text-[#6699FF]' : 'text-violet-400'}`} />
-            )}
-          </button>
+          {brand.sales_enabled && (
+            <button
+              onClick={() => setActiveTab('sales')}
+              className={`group w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-xs font-semibold tracking-wide uppercase transition-all duration-200 cursor-pointer text-left
+                ${activeTab === 'sales' ? 'text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'}`}
+              style={activeTab === 'sales' ? {
+                background: brand.type === 'aourum'
+                  ? 'linear-gradient(135deg, rgba(0,68,204,0.3) 0%, rgba(34,102,255,0.1) 100%)'
+                  : 'linear-gradient(135deg, rgba(124,58,237,0.3) 0%, rgba(167,139,250,0.1) 100%)',
+                boxShadow: brand.type === 'aourum'
+                  ? 'inset 0 0 0 1px rgba(0,68,204,0.35)'
+                  : 'inset 0 0 0 1px rgba(124,58,237,0.35)'
+              } : {}}
+            >
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
+                ${activeTab === 'sales' 
+                  ? brand.type === 'aourum' ? 'bg-[#0044CC] text-white' : 'bg-violet-600 text-white'
+                  : 'bg-white/[0.04] group-hover:bg-white/[0.08]'}`}>
+                <ShoppingBag className="w-4 h-4" />
+              </div>
+              <span className="flex-1">Conteo de Ventas</span>
+              {activeTab === 'sales' && (
+                <ChevronRight className={`w-3.5 h-3.5 ${brand.type === 'aourum' ? 'text-[#6699FF]' : 'text-violet-400'}`} />
+              )}
+            </button>
+          )}
 
           {/* Tab Button 2: Almacén */}
-          <button
-            onClick={() => setActiveTab('inventory')}
-            className={`group w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-xs font-semibold tracking-wide uppercase transition-all duration-200 cursor-pointer text-left
-              ${activeTab === 'inventory' ? 'text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'}`}
-            style={activeTab === 'inventory' ? {
-              background: brand.type === 'aourum'
-                ? 'linear-gradient(135deg, rgba(0,68,204,0.3) 0%, rgba(34,102,255,0.1) 100%)'
-                : 'linear-gradient(135deg, rgba(124,58,237,0.3) 0%, rgba(167,139,250,0.1) 100%)',
-              boxShadow: brand.type === 'aourum'
-                ? 'inset 0 0 0 1px rgba(0,68,204,0.35)'
-                : 'inset 0 0 0 1px rgba(124,58,237,0.35)'
-            } : {}}
-          >
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
-              ${activeTab === 'inventory'
-                ? brand.type === 'aourum' ? 'bg-[#0044CC] text-white' : 'bg-violet-600 text-white'
-                : 'bg-white/[0.04] group-hover:bg-white/[0.08]'}`}>
-              <Boxes className="w-4 h-4" />
-            </div>
-            <span className="flex-1">Almacén</span>
-            {activeTab === 'inventory' && (
-              <ChevronRight className={`w-3.5 h-3.5 ${brand.type === 'aourum' ? 'text-[#6699FF]' : 'text-violet-400'}`} />
-            )}
-          </button>
+          {brand.inventory_enabled && (
+            <button
+              onClick={() => setActiveTab('inventory')}
+              className={`group w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-xs font-semibold tracking-wide uppercase transition-all duration-200 cursor-pointer text-left
+                ${activeTab === 'inventory' ? 'text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'}`}
+              style={activeTab === 'inventory' ? {
+                background: brand.type === 'aourum'
+                  ? 'linear-gradient(135deg, rgba(0,68,204,0.3) 0%, rgba(34,102,255,0.1) 100%)'
+                  : 'linear-gradient(135deg, rgba(124,58,237,0.3) 0%, rgba(167,139,250,0.1) 100%)',
+                boxShadow: brand.type === 'aourum'
+                  ? 'inset 0 0 0 1px rgba(0,68,204,0.35)'
+                  : 'inset 0 0 0 1px rgba(124,58,237,0.35)'
+              } : {}}
+            >
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
+                ${activeTab === 'inventory'
+                  ? brand.type === 'aourum' ? 'bg-[#0044CC] text-white' : 'bg-violet-600 text-white'
+                  : 'bg-white/[0.04] group-hover:bg-white/[0.08]'}`}>
+                <Boxes className="w-4 h-4" />
+              </div>
+              <span className="flex-1">Almacén</span>
+              {activeTab === 'inventory' && (
+                <ChevronRight className={`w-3.5 h-3.5 ${brand.type === 'aourum' ? 'text-[#6699FF]' : 'text-violet-400'}`} />
+              )}
+            </button>
+          )}
         </aside>
 
         {/* ── Main View Workspace Area ── */}
@@ -1957,23 +1968,27 @@ export default function Dashboard() {
 
       {/* ── Mobile Bottom Navigation ── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0C0F16]/95 border-t border-white/[0.08] backdrop-blur-xl px-6 py-2 flex items-center justify-around">
-        <button
-          onClick={() => setActiveTab('sales')}
-          className={`flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl transition-all cursor-pointer
-            ${activeTab === 'sales' ? 'text-[#6699FF]' : 'text-slate-400'}`}
-        >
-          <ShoppingBag className="w-5 h-5" />
-          <span className="text-[9px] font-bold uppercase tracking-wider">Ventas</span>
-        </button>
+        {brand.sales_enabled && (
+          <button
+            onClick={() => setActiveTab('sales')}
+            className={`flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl transition-all cursor-pointer
+              ${activeTab === 'sales' ? 'text-[#6699FF]' : 'text-slate-400'}`}
+          >
+            <ShoppingBag className="w-5 h-5" />
+            <span className="text-[9px] font-bold uppercase tracking-wider">Ventas</span>
+          </button>
+        )}
         
-        <button
-          onClick={() => setActiveTab('inventory')}
-          className={`flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl transition-all cursor-pointer
-            ${activeTab === 'inventory' ? 'text-[#6699FF]' : 'text-slate-400'}`}
-        >
-          <Boxes className="w-5 h-5" />
-          <span className="text-[9px] font-bold uppercase tracking-wider">Almacén</span>
-        </button>
+        {brand.inventory_enabled && (
+          <button
+            onClick={() => setActiveTab('inventory')}
+            className={`flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl transition-all cursor-pointer
+              ${activeTab === 'inventory' ? 'text-[#6699FF]' : 'text-slate-400'}`}
+          >
+            <Boxes className="w-5 h-5" />
+            <span className="text-[9px] font-bold uppercase tracking-wider">Almacén</span>
+          </button>
+        )}
       </nav>
 
       {/* ── Floating Mobile Cart Drawer Trigger ── */}
