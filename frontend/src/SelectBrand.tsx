@@ -9,7 +9,8 @@ import {
   AlertCircle, 
   Search, 
   LogOut, 
-  Briefcase 
+  Briefcase,
+  Trash2
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001/api';
@@ -152,6 +153,31 @@ export default function SelectBrand() {
     }
   };
 
+  const handleDeleteBrand = async (brand: Brand) => {
+    if (!currentUser) return;
+    const confirmMessage = brand.type === 'aourum'
+      ? `¿Seguro que deseas desvincular y eliminar la marca "${brand.name}"? Volverá a estar disponible para que otros usuarios la vinculen.`
+      : `¿Seguro que deseas eliminar la marca "${brand.name}"? Esta acción borrará permanentemente sus productos, ventas e insumos.`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/brands/${brand.id}?owner_username=${currentUser}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        fetchMyBrands(currentUser);
+        fetchAourumBrands(); // reload list of available Aourum brands
+      } else {
+        setError(data.error || 'Error al eliminar la marca.');
+      }
+    } catch (e) {
+      setError('Error de red al eliminar la marca.');
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('acon_user');
     localStorage.removeItem('acon_user_name');
@@ -277,13 +303,24 @@ export default function SelectBrand() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => navigate(`/dashboard?brandId=${brand.id}`)}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/[0.04] hover:bg-[#0044CC]/20 hover:text-[#6699FF] border border-white/[0.08] hover:border-[#0044CC]/40 text-slate-300 text-xs font-bold transition-all cursor-pointer"
-                  >
-                    <span>Entrar a la marca</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex gap-2 w-full mt-auto">
+                    <button
+                      onClick={() => navigate(`/dashboard?brandId=${brand.id}`)}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/[0.04] hover:bg-[#0044CC]/20 hover:text-[#6699FF] border border-white/[0.08] hover:border-[#0044CC]/40 text-slate-300 text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <span>Entrar a la marca</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                    {brand.role === 'owner' && (
+                      <button
+                        onClick={() => handleDeleteBrand(brand)}
+                        className="px-3 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 hover:text-red-300 transition-all cursor-pointer flex items-center justify-center shrink-0"
+                        title="Eliminar marca"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

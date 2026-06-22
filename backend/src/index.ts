@@ -362,6 +362,34 @@ app.get('/api/brands/detail/:id', async (req, res) => {
   }
 });
 
+// Eliminar marca (Owner only)
+app.delete('/api/brands/:id', async (req, res) => {
+  const { id } = req.params;
+  const { owner_username } = req.query;
+
+  if (!owner_username) {
+    return res.status(400).json({ error: 'owner_username es requerido' });
+  }
+
+  try {
+    // 1. Verificar que el solicitante sea el propietario
+    const ownerRes = await query('SELECT owner_username FROM acon_brands WHERE id = $1', [id]);
+    if (ownerRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Marca no encontrada.' });
+    }
+    if (ownerRes.rows[0].owner_username !== owner_username) {
+      return res.status(403).json({ error: 'Solo el propietario de la marca puede eliminarla.' });
+    }
+
+    // 2. Eliminar de la base de datos (con ON DELETE CASCADE)
+    await query('DELETE FROM acon_brands WHERE id = $1', [id]);
+    return res.json({ message: 'Marca eliminada con éxito.' });
+  } catch (error) {
+    console.error('Error deleting brand:', error);
+    return res.status(500).json({ error: 'Error al eliminar la marca.' });
+  }
+});
+
 // ── Ventas (Neon) ─────────────────────────────────────────────────
 app.post('/api/sales', async (req, res) => {
   const { acon_brand_id, section_id, created_by, total, items } = req.body;
