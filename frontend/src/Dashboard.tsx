@@ -140,6 +140,14 @@ export default function Dashboard() {
   const [customPrices, setCustomPrices] = useState<Record<number, number | null>>({});
   const [configuringCatalog, setConfiguringCatalog] = useState(false);
   const [savingCatalog, setSavingCatalog] = useState(false);
+
+  // Warehouse Histories State
+  const [inventorySubTab, setInventorySubTab] = useState<'list' | 'history'>('list');
+  const [internalSubTab, setInternalSubTab] = useState<'list' | 'history'>('list');
+  const [inventoryHistory, setInventoryHistory] = useState<any[]>([]);
+  const [internalHistory, setInternalHistory] = useState<any[]>([]);
+  const [loadingInventoryHistory, setLoadingInventoryHistory] = useState(false);
+  const [loadingInternalHistory, setLoadingInternalHistory] = useState(false);
   
   // Collaborators State
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
@@ -243,6 +251,8 @@ export default function Dashboard() {
     } else if (activeTab === 'inventory') {
       fetchInternalInventory(brandId);
       fetchProducts(brandId);
+      fetchInventoryHistory(brandId);
+      fetchInternalHistory(brandId);
       if (brand?.role === 'owner') {
         fetchCollaborators(brandId);
       }
@@ -396,6 +406,34 @@ export default function Dashboard() {
     }
   };
 
+  const fetchInventoryHistory = async (bId: string) => {
+    setLoadingInventoryHistory(true);
+    try {
+      const res = await fetch(`${API_BASE}/brands/${bId}/inventory-history`);
+      if (res.ok) {
+        setInventoryHistory(await res.json());
+      }
+    } catch (e) {
+      console.error('Error fetching inventory history:', e);
+    } finally {
+      setLoadingInventoryHistory(false);
+    }
+  };
+
+  const fetchInternalHistory = async (bId: string) => {
+    setLoadingInternalHistory(true);
+    try {
+      const res = await fetch(`${API_BASE}/brands/${bId}/internal-history`);
+      if (res.ok) {
+        setInternalHistory(await res.json());
+      }
+    } catch (e) {
+      console.error('Error fetching internal history:', e);
+    } finally {
+      setLoadingInternalHistory(false);
+    }
+  };
+
   const fetchSalesHistory = async (id: string) => {
     setLoadingHistory(true);
     try {
@@ -510,6 +548,7 @@ export default function Dashboard() {
         setTimeout(() => setCheckoutSuccess(false), 3000);
         fetchSectionSalesHistory(String(selectedSection.id));
         fetchSectionProducts(String(selectedSection.id));
+        if (brand) fetchInventoryHistory(String(brand.id));
       } else {
         const errData = await res.json();
         setCheckoutError(errData.error || 'Error al registrar la venta');
@@ -555,10 +594,11 @@ export default function Dashboard() {
       const res = await fetch(`${API_BASE}/internal-items/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stock: newStock })
+        body: JSON.stringify({ stock: newStock, username: currentUser })
       });
       if (res.ok) {
         fetchInternalInventory(String(brand.id));
+        fetchInternalHistory(String(brand.id));
       }
     } catch (e) {
       console.error(e);
@@ -666,10 +706,11 @@ export default function Dashboard() {
       const res = await fetch(`${API_BASE}/brands/${brand.id}/products/${pId}/stock`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stock: newStock })
+        body: JSON.stringify({ stock: newStock, username: currentUser })
       });
       if (res.ok) {
         fetchProducts(String(brand.id));
+        fetchInventoryHistory(String(brand.id));
       }
     } catch (e) {
       console.error('Error updating product stock:', e);
@@ -1746,15 +1787,134 @@ export default function Dashboard() {
               {/* Subview: Inventario (Conteo de Productos del Catálogo) */}
               {warehouseSubTab === 'inventario' && (
                 <div className="space-y-5">
-                  <div className="flex items-center gap-2">
-                    <Package className="w-4 h-4 text-[#6699FF]" />
-                    <div>
-                      <h3 className="font-bold text-white text-xs uppercase tracking-wider">Inventario de Productos</h3>
-                      <p className="text-[10px] text-slate-500">Control de stock de productos del catálogo de la marca</p>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.05] pb-3.5">
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4 text-[#6699FF]" />
+                      <div>
+                        <h3 className="font-bold text-white text-xs uppercase tracking-wider">Inventario de Productos</h3>
+                        <p className="text-[10px] text-slate-500">Control de stock de productos del catálogo de la marca</p>
+                      </div>
+                    </div>
+
+                    <div className="flex bg-black/30 border border-white/[0.08] p-0.5 rounded-xl self-start sm:self-auto shrink-0">
+                      <button
+                        onClick={() => setInventorySubTab('list')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer
+                          ${inventorySubTab === 'list' 
+                            ? brand.type === 'aourum'
+                              ? 'bg-[#0044CC] text-white shadow-md'
+                              : 'bg-violet-600 text-white shadow-md'
+                            : 'text-slate-400 hover:text-slate-200'}`}
+                      >
+                        Existencias
+                      </button>
+                      <button
+                        onClick={() => setInventorySubTab('history')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer
+                          ${inventorySubTab === 'history' 
+                            ? brand.type === 'aourum'
+                              ? 'bg-[#0044CC] text-white shadow-md'
+                              : 'bg-violet-600 text-white shadow-md'
+                            : 'text-slate-400 hover:text-slate-200'}`}
+                      >
+                        Historial
+                      </button>
                     </div>
                   </div>
 
-                  {loadingProducts ? (
+                  {inventorySubTab === 'history' ? (
+                    <div className="space-y-4">
+                      {loadingInventoryHistory ? (
+                        <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
+                          <Loader2 className="w-6 h-6 animate-spin text-[#2266FF]" />
+                          <p className="text-xs">Cargando historial...</p>
+                        </div>
+                      ) : inventoryHistory.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-white/10 p-12 text-center bg-white/[0.01]">
+                          <History className="w-8 h-8 text-slate-800 mx-auto mb-2 animate-pulse" />
+                          <p className="text-slate-400 text-xs font-medium">Sin movimientos registrados</p>
+                          <p className="text-[10px] text-slate-600 mt-1">Los ajustes de stock y ventas aparecerán aquí detallados.</p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Desktop View Table */}
+                          <div className="hidden md:block rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
+                            <table className="w-full text-left border-collapse text-xs min-w-[600px]">
+                              <thead>
+                                <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
+                                  <th className="px-4 py-3">Fecha y Hora</th>
+                                  <th className="px-4 py-3">Producto</th>
+                                  <th className="px-4 py-3">Ajuste</th>
+                                  <th className="px-4 py-3">Stock Previo</th>
+                                  <th className="px-4 py-3">Stock Nuevo</th>
+                                  <th className="px-4 py-3">Responsable</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {inventoryHistory.map((log) => {
+                                  const dateStr = new Date(log.created_at).toLocaleString('es-PE');
+                                  const isPositive = log.delta > 0;
+                                  return (
+                                    <tr key={log.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
+                                      <td className="px-4 py-3 text-slate-400">{dateStr}</td>
+                                      <td className="px-4 py-3 font-semibold text-slate-200">{log.product_name}</td>
+                                      <td className="px-4 py-3">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold shadow-sm
+                                          ${isPositive 
+                                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
+                                            : 'bg-red-500/15 text-red-400 border border-red-500/20'}`}
+                                        >
+                                          {isPositive ? `+${log.delta}` : log.delta}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-slate-400">{log.previous_stock} u.</td>
+                                      <td className="px-4 py-3 text-white font-medium">{log.new_stock} u.</td>
+                                      <td className="px-4 py-3">
+                                        <span className="px-2 py-0.5 rounded bg-white/[0.05] text-[10px] text-slate-300 font-semibold border border-white/[0.06]">
+                                          {log.updated_by}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Mobile View Card-based */}
+                          <div className="block md:hidden space-y-3">
+                            {inventoryHistory.map((log) => {
+                              const dateStr = new Date(log.created_at).toLocaleString('es-PE');
+                              const isPositive = log.delta > 0;
+                              return (
+                                <div key={log.id} className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.015] space-y-3">
+                                  <div className="flex justify-between items-start">
+                                    <div>
+                                      <h4 className="font-bold text-xs text-white">{log.product_name}</h4>
+                                      <p className="text-[9px] text-slate-500 mt-0.5">{dateStr}</p>
+                                    </div>
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold shadow-sm
+                                      ${isPositive 
+                                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
+                                        : 'bg-red-500/15 text-red-400 border border-red-500/20'}`}
+                                    >
+                                      {isPositive ? `+${log.delta}` : log.delta}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[10px] border-t border-white/[0.03] pt-2.5">
+                                    <span className="text-slate-500">Stock: <strong className="text-slate-300">{log.previous_stock} u.</strong> → <strong className="text-white">{log.new_stock} u.</strong></span>
+                                    <span className="px-1.5 py-0.5 rounded bg-white/[0.04] text-[9px] text-slate-400 font-medium">
+                                      {log.updated_by}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : loadingProducts ? (
                     <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
                       <Loader2 className="w-6 h-6 animate-spin text-[#2266FF]" />
                       <p className="text-xs">Cargando catálogo...</p>
@@ -1875,177 +2035,300 @@ export default function Dashboard() {
               {/* Subview 1: Insumos Internos */}
               {warehouseSubTab === 'internal' && (
                 <div className="space-y-5">
-                  <div className="flex items-center gap-2">
-                    <Boxes className="w-4 h-4 text-[#6699FF]" />
-                    <div>
-                      <h3 className="font-bold text-white text-xs uppercase tracking-wider">Insumos de Almacén</h3>
-                      <p className="text-[10px] text-slate-500">Control de embalajes, etiquetas y materiales logísticos internos</p>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.05] pb-3.5">
+                    <div className="flex items-center gap-2">
+                      <Boxes className="w-4 h-4 text-[#6699FF]" />
+                      <div>
+                        <h3 className="font-bold text-white text-xs uppercase tracking-wider">Insumos de Almacén</h3>
+                        <p className="text-[10px] text-slate-500">Control de embalajes, etiquetas y materiales logísticos internos</p>
+                      </div>
+                    </div>
+
+                    <div className="flex bg-black/30 border border-white/[0.08] p-0.5 rounded-xl self-start sm:self-auto shrink-0">
+                      <button
+                        onClick={() => setInternalSubTab('list')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer
+                          ${internalSubTab === 'list' 
+                            ? brand.type === 'aourum'
+                              ? 'bg-[#0044CC] text-white shadow-md'
+                              : 'bg-violet-600 text-white shadow-md'
+                            : 'text-slate-400 hover:text-slate-200'}`}
+                      >
+                        Materiales
+                      </button>
+                      <button
+                        onClick={() => setInternalSubTab('history')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer
+                          ${internalSubTab === 'history' 
+                            ? brand.type === 'aourum'
+                              ? 'bg-[#0044CC] text-white shadow-md'
+                              : 'bg-violet-600 text-white shadow-md'
+                            : 'text-slate-400 hover:text-slate-200'}`}
+                      >
+                        Historial
+                      </button>
                     </div>
                   </div>
 
-                  {/* Add Insumo Form */}
-                  <form onSubmit={handleAddInternalItem} className="flex flex-col sm:flex-row gap-3 items-end p-4 rounded-xl border border-white/[0.05] bg-white/[0.01]">
-                    <div className="flex-1 w-full">
-                      <label className="block text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1.5">Nombre Insumo</label>
-                      <input 
-                        type="text" 
-                        placeholder="Ej. Etiquetas Adhesivas" 
-                        value={newItemName} 
-                        onChange={e => setNewItemName(e.target.value)}
-                        required
-                        className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#0044CC]/50 transition-colors" 
-                      />
-                    </div>
-                    <div className="w-full sm:w-28">
-                      <label className="block text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1.5">Stock Inicial</label>
-                      <input 
-                        type="number" 
-                        value={newItemStock} 
-                        onChange={e => setNewItemStock(Math.max(0, parseInt(e.target.value) || 0))}
-                        required
-                        className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#0044CC]/50 transition-colors" 
-                      />
-                    </div>
-                    <div className="w-full sm:w-36">
-                      <label className="block text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1.5">Categoría</label>
-                      <select 
-                        value={newItemCategory} 
-                        onChange={e => setNewItemCategory(e.target.value)}
-                        className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#0044CC]/50 transition-colors cursor-pointer"
-                      >
-                        {Object.keys(CATEGORY_COLORS).map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                    <button 
-                      type="submit"
-                      disabled={creatingInternal || !newItemName.trim()}
-                      className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-40"
-                      style={{
-                        background: brand.type === 'aourum'
-                          ? 'linear-gradient(135deg, #0044CC 0%, #2266FF 100%)'
-                          : 'linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%)',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-                      }}
-                    >
-                      {creatingInternal ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                      <span>Agregar</span>
-                    </button>
-                  </form>
+                  {internalSubTab === 'history' ? (
+                    <div className="space-y-4">
+                      {loadingInternalHistory ? (
+                        <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
+                          <Loader2 className="w-6 h-6 animate-spin text-[#2266FF]" />
+                          <p className="text-xs">Cargando historial...</p>
+                        </div>
+                      ) : internalHistory.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-white/10 p-12 text-center bg-white/[0.01]">
+                          <History className="w-8 h-8 text-slate-800 mx-auto mb-2 animate-pulse" />
+                          <p className="text-slate-400 text-xs font-medium">Sin movimientos registrados</p>
+                          <p className="text-[10px] text-slate-600 mt-1">Los ajustes de insumos aparecerán aquí detallados.</p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Desktop View Table */}
+                          <div className="hidden md:block rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
+                            <table className="w-full text-left border-collapse text-xs min-w-[600px]">
+                              <thead>
+                                <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
+                                  <th className="px-4 py-3">Fecha y Hora</th>
+                                  <th className="px-4 py-3">Insumo</th>
+                                  <th className="px-4 py-3">Ajuste</th>
+                                  <th className="px-4 py-3">Stock Previo</th>
+                                  <th className="px-4 py-3">Stock Nuevo</th>
+                                  <th className="px-4 py-3">Responsable</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {internalHistory.map((log) => {
+                                  const dateStr = new Date(log.created_at).toLocaleString('es-PE');
+                                  const isPositive = log.delta > 0;
+                                  return (
+                                    <tr key={log.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
+                                      <td className="px-4 py-3 text-slate-400">{dateStr}</td>
+                                      <td className="px-4 py-3 font-semibold text-slate-200">{log.item_name}</td>
+                                      <td className="px-4 py-3">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold shadow-sm
+                                          ${isPositive 
+                                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
+                                            : 'bg-red-500/15 text-red-400 border border-red-500/20'}`}
+                                        >
+                                          {isPositive ? `+${log.delta}` : log.delta}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-slate-400">{log.previous_stock}</td>
+                                      <td className="px-4 py-3 text-white font-medium">{log.new_stock}</td>
+                                      <td className="px-4 py-3">
+                                        <span className="px-2 py-0.5 rounded bg-white/[0.05] text-[10px] text-slate-300 font-semibold border border-white/[0.06]">
+                                          {log.updated_by}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
 
-                  {/* Insumos Table */}
-                  {loadingInventory ? (
-                    <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
-                      <Loader2 className="w-6 h-6 animate-spin text-[#2266FF]" />
-                      <p className="text-xs">Cargando insumos...</p>
-                    </div>
-                  ) : internalInventory.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-white/10 p-12 text-center bg-white/[0.01]">
-                      <Boxes className="w-8 h-8 text-slate-800 mx-auto mb-2" />
-                      <p className="text-slate-400 text-xs font-medium">Sin insumos registrados</p>
-                      <p className="text-[10px] text-slate-600 mt-1">Agrega materiales arriba para monitorear sus existencias.</p>
+                          {/* Mobile View Card-based */}
+                          <div className="block md:hidden space-y-3">
+                            {internalHistory.map((log) => {
+                              const dateStr = new Date(log.created_at).toLocaleString('es-PE');
+                              const isPositive = log.delta > 0;
+                              return (
+                                <div key={log.id} className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.015] space-y-3">
+                                  <div className="flex justify-between items-start">
+                                    <div>
+                                      <h4 className="font-bold text-xs text-white">{log.item_name}</h4>
+                                      <p className="text-[9px] text-slate-500 mt-0.5">{dateStr}</p>
+                                    </div>
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold shadow-sm
+                                      ${isPositive 
+                                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
+                                        : 'bg-red-500/15 text-red-400 border border-red-500/20'}`}
+                                    >
+                                      {isPositive ? `+${log.delta}` : log.delta}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[10px] border-t border-white/[0.03] pt-2.5">
+                                    <span className="text-slate-500">Stock: <strong className="text-slate-300">{log.previous_stock}</strong> → <strong className="text-white">{log.new_stock}</strong></span>
+                                    <span className="px-1.5 py-0.5 rounded bg-white/[0.04] text-[9px] text-slate-400 font-medium">
+                                      {log.updated_by}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <>
-                      {/* Desktop View Table */}
-                      <div className="hidden md:block rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
-                        <table className="w-full text-left border-collapse text-xs min-w-[500px]">
-                          <thead>
-                            <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
-                              <th className="px-4 py-3">Insumo</th>
-                              <th className="px-4 py-3">Existencia</th>
-                              <th className="px-4 py-3">Categoría</th>
-                              <th className="px-4 py-3 text-right">Acción</th>
-                            </tr>
-                          </thead>
-                          <tbody>
+                      {/* Add Insumo Form */}
+                      <form onSubmit={handleAddInternalItem} className="flex flex-col sm:flex-row gap-3 items-end p-4 rounded-xl border border-white/[0.05] bg-white/[0.01]">
+                        <div className="flex-1 w-full">
+                          <label className="block text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1.5">Nombre Insumo</label>
+                          <input 
+                            type="text" 
+                            placeholder="Ej. Etiquetas Adhesivas" 
+                            value={newItemName} 
+                            onChange={e => setNewItemName(e.target.value)}
+                            required
+                            className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#0044CC]/50 transition-colors" 
+                          />
+                        </div>
+                        <div className="w-full sm:w-28">
+                          <label className="block text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1.5">Stock Inicial</label>
+                          <input 
+                            type="number" 
+                            value={newItemStock} 
+                            onChange={e => setNewItemStock(Math.max(0, parseInt(e.target.value) || 0))}
+                            required
+                            className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#0044CC]/50 transition-colors" 
+                          />
+                        </div>
+                        <div className="w-full sm:w-36">
+                          <label className="block text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1.5">Categoría</label>
+                          <select 
+                            value={newItemCategory} 
+                            onChange={e => setNewItemCategory(e.target.value)}
+                            className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#0044CC]/50 transition-colors cursor-pointer"
+                          >
+                            {Object.keys(CATEGORY_COLORS).map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <button 
+                          type="submit"
+                          disabled={creatingInternal || !newItemName.trim()}
+                          className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-40"
+                          style={{
+                            background: brand.type === 'aourum'
+                              ? 'linear-gradient(135deg, #0044CC 0%, #2266FF 100%)'
+                              : 'linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%)',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                          }}
+                        >
+                          {creatingInternal ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                          <span>Agregar</span>
+                        </button>
+                      </form>
+
+                      {/* Insumos Table */}
+                      {loadingInventory ? (
+                        <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
+                          <Loader2 className="w-6 h-6 animate-spin text-[#2266FF]" />
+                          <p className="text-xs">Cargando insumos...</p>
+                        </div>
+                      ) : internalInventory.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-white/10 p-12 text-center bg-white/[0.01]">
+                          <Boxes className="w-8 h-8 text-slate-800 mx-auto mb-2" />
+                          <p className="text-slate-400 text-xs font-medium">Sin insumos registrados</p>
+                          <p className="text-[10px] text-slate-600 mt-1">Agrega materiales arriba para monitorear sus existencias.</p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Desktop View Table */}
+                          <div className="hidden md:block rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
+                            <table className="w-full text-left border-collapse text-xs min-w-[500px]">
+                              <thead>
+                                <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
+                                  <th className="px-4 py-3">Insumo</th>
+                                  <th className="px-4 py-3">Existencia</th>
+                                  <th className="px-4 py-3">Categoría</th>
+                                  <th className="px-4 py-3 text-right">Acción</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {internalInventory.map((item) => (
+                                  <tr key={item.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
+                                    <td className="px-4 py-3 font-semibold text-slate-200">{item.name}</td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`font-black min-w-[20px] text-center text-sm ${item.stock < 10 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
+                                          {item.stock}
+                                        </span>
+                                        <button 
+                                          onClick={() => openStockAdjustmentModal(item.id, item.name, item.stock, 'internal')}
+                                          className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
+                                          title="Modificar cantidad"
+                                        >
+                                          <Sliders className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${CATEGORY_COLORS[item.category] || CATEGORY_COLORS['Otros']}`}>
+                                        {item.category}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-right">
+                                      <button 
+                                        onClick={() => handleDeleteInternalItem(item.id)}
+                                        className="w-7 h-7 rounded-lg bg-red-500/[0.08] hover:bg-red-500/20 flex items-center justify-center text-red-400 transition-all cursor-pointer ml-auto"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Mobile Card-based View */}
+                          <div className="block md:hidden space-y-3">
                             {internalInventory.map((item) => (
-                              <tr key={item.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
-                                <td className="px-4 py-3 font-semibold text-slate-200">{item.name}</td>
-                                <td className="px-4 py-3">
-                                  <div className="flex items-center gap-2">
-                                    <span className={`font-black min-w-[20px] text-center text-sm ${item.stock < 10 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
-                                      {item.stock}
+                              <div key={item.id} className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.015] space-y-3">
+                                <div className="flex justify-between items-start gap-2">
+                                  <div>
+                                    <h4 className="font-bold text-xs text-white">{item.name}</h4>
+                                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-semibold ${CATEGORY_COLORS[item.category] || CATEGORY_COLORS['Otros']}`}>
+                                      {item.category}
                                     </span>
+                                  </div>
+                                  <button 
+                                    onClick={() => handleDeleteInternalItem(item.id)}
+                                    className="w-7.5 h-7.5 rounded-lg bg-red-500/[0.08] active:bg-red-500/20 flex items-center justify-center text-red-400 transition-all cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+
+                                <div className="flex items-center justify-between border-t border-white/[0.03] pt-3.5">
+                                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Existencia</span>
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex items-center bg-black/40 border border-white/[0.08] rounded-xl p-0.5 gap-0.5 shadow-inner">
+                                      <button
+                                        onClick={() => handleUpdateInternalStock(item.id, Math.max(0, item.stock - 1), 0)}
+                                        className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-red-400 transition-all cursor-pointer"
+                                      >
+                                        <Minus className="w-3 h-3" />
+                                      </button>
+                                      <span className={`w-8 text-center text-xs font-black ${item.stock < 10 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
+                                        {item.stock}
+                                      </span>
+                                      <button
+                                        onClick={() => handleUpdateInternalStock(item.id, item.stock + 1, 0)}
+                                        className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-emerald-400 transition-all cursor-pointer"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </button>
+                                    </div>
+
                                     <button 
                                       onClick={() => openStockAdjustmentModal(item.id, item.name, item.stock, 'internal')}
-                                      className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
+                                      className="w-8 h-8 rounded-xl bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] transition-all cursor-pointer"
                                       title="Modificar cantidad"
                                     >
                                       <Sliders className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${CATEGORY_COLORS[item.category] || CATEGORY_COLORS['Otros']}`}>
-                                    {item.category}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-right">
-                                  <button 
-                                    onClick={() => handleDeleteInternalItem(item.id)}
-                                    className="w-7 h-7 rounded-lg bg-red-500/[0.08] hover:bg-red-500/20 flex items-center justify-center text-red-400 transition-all cursor-pointer ml-auto"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Mobile Card-based View */}
-                      <div className="block md:hidden space-y-3">
-                        {internalInventory.map((item) => (
-                          <div key={item.id} className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.015] space-y-3">
-                            <div className="flex justify-between items-start gap-2">
-                              <div>
-                                <h4 className="font-bold text-xs text-white">{item.name}</h4>
-                                <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-semibold ${CATEGORY_COLORS[item.category] || CATEGORY_COLORS['Otros']}`}>
-                                  {item.category}
-                                </span>
-                              </div>
-                              <button 
-                                onClick={() => handleDeleteInternalItem(item.id)}
-                                className="w-7.5 h-7.5 rounded-lg bg-red-500/[0.08] active:bg-red-500/20 flex items-center justify-center text-red-400 transition-all cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-
-                            <div className="flex items-center justify-between border-t border-white/[0.03] pt-3.5">
-                              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Existencia</span>
-                              <div className="flex items-center gap-2">
-                                <div className="flex items-center bg-black/40 border border-white/[0.08] rounded-xl p-0.5 gap-0.5 shadow-inner">
-                                  <button
-                                    onClick={() => handleUpdateInternalStock(item.id, Math.max(0, item.stock - 1), 0)}
-                                    className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-red-400 transition-all cursor-pointer"
-                                  >
-                                    <Minus className="w-3 h-3" />
-                                  </button>
-                                  <span className={`w-8 text-center text-xs font-black ${item.stock < 10 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
-                                    {item.stock}
-                                  </span>
-                                  <button
-                                    onClick={() => handleUpdateInternalStock(item.id, item.stock + 1, 0)}
-                                    className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-emerald-400 transition-all cursor-pointer"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                  </button>
                                 </div>
-
-                                <button 
-                                  onClick={() => openStockAdjustmentModal(item.id, item.name, item.stock, 'internal')}
-                                  className="w-8 h-8 rounded-xl bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] transition-all cursor-pointer"
-                                  title="Modificar cantidad"
-                                >
-                                  <Sliders className="w-3.5 h-3.5" />
-                                </button>
                               </div>
-                            </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
