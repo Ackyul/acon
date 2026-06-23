@@ -264,7 +264,7 @@ app.get('/api/brands/:id/products', async (req, res) => {
       // Caso Aourum: Obtener de Supabase
       const { data, error } = await aourumSupabase
         .from('products')
-        .select('id, name, description, price, stock, image, category')
+        .select('id, name, description, price, price_aourum, stock, image, category')
         .eq('brand_id', brand.aourum_brand_id);
 
       if (error) throw error;
@@ -950,12 +950,13 @@ app.get('/api/sections/:sectionId/products', async (req, res) => {
     }
     const brandId = sectionRes.rows[0].acon_brand_id;
     
-    // Obtener los product_ids asignados a la sección
+    // Obtener los product_ids asignados a la sección con precios personalizados
     const assignedRes = await query(
-      'SELECT product_id FROM acon_section_products WHERE section_id = $1',
+      'SELECT product_id, custom_price FROM acon_section_products WHERE section_id = $1',
       [sectionId]
     );
-    const assignedIds = new Set(assignedRes.rows.map(r => r.product_id));
+    const assignedMap = new Map(assignedRes.rows.map(r => [Number(r.product_id), r.custom_price]));
+    const assignedIds = new Set(assignedRes.rows.map(r => Number(r.product_id)));
 
     // Obtener la información de marca para saber el tipo (local o Aourum)
     const brandRes = await query('SELECT aourum_brand_id FROM acon_brands WHERE id = $1', [brandId]);
@@ -965,7 +966,7 @@ app.get('/api/sections/:sectionId/products', async (req, res) => {
     if (aourumBrandId !== null) {
       const { data, error } = await aourumSupabase
         .from('products')
-        .select('id, name, description, price, stock, image, category')
+        .select('id, name, description, price, price_aourum, stock, image, category')
         .eq('brand_id', aourumBrandId);
       if (error) throw error;
 
@@ -988,12 +989,25 @@ app.get('/api/sections/:sectionId/products', async (req, res) => {
       allProducts = localProducts.rows;
     }
 
-    // Filtrar solo los asignados
-    const activeProducts = allProducts.filter(p => assignedIds.has(p.id));
+    // Filtrar solo los asignados y aplicar precio personalizado si existe
+    const activeProducts = allProducts
+      .filter(p => assignedIds.has(Number(p.id)))
+      .map(p => {
+        const customPrice = assignedMap.get(Number(p.id));
+        const basePrice = (p.price_aourum !== null && p.price_aourum !== undefined) ? Number(p.price_aourum) : Number(p.price);
+        return {
+          ...p,
+          price: customPrice !== null && customPrice !== undefined ? Number(customPrice) : basePrice
+        };
+      });
     
     return res.json({
       active: activeProducts,
-      allIds: Array.from(assignedIds)
+      allIds: Array.from(assignedIds),
+      customPrices: assignedRes.rows.map(r => ({
+        product_id: Number(r.product_id),
+        custom_price: r.custom_price !== null ? Number(r.custom_price) : null
+      }))
     });
   } catch (error) {
     console.error('Error fetching section products:', error);
@@ -1004,9 +1018,22 @@ app.get('/api/sections/:sectionId/products', async (req, res) => {
 // Guardar catálogo seleccionado para la sección
 app.post('/api/sections/:sectionId/products', async (req, res) => {
   const { sectionId } = req.params;
-  const { productIds } = req.body;
-  if (!Array.isArray(productIds)) {
-    return res.status(400).json({ error: 'productIds debe ser un arreglo.' });
+  const { productIds, products } = req.body;
+
+  let itemsToInsert: { id: number; custom_price: number | null }[] = [];
+
+  if (Array.isArray(products)) {
+    itemsToInsert = products.map(p => ({
+      id: Number(p.id),
+      custom_price: p.custom_price !== undefined && p.custom_price !== null ? Number(p.custom_price) : null
+    }));
+  } else if (Array.isArray(productIds)) {
+    itemsToInsert = productIds.map(id => ({
+      id: Number(id),
+      custom_price: null
+    }));
+  } else {
+    return res.status(400).json({ error: 'Debes proporcionar productIds o products.' });
   }
 
   try {
@@ -1015,11 +1042,11 @@ app.post('/api/sections/:sectionId/products', async (req, res) => {
     // Limpiar catálogo previo de la sección
     await query('DELETE FROM acon_section_products WHERE section_id = $1', [sectionId]);
     
-    // Insertar nueva selección
-    for (const pId of productIds) {
+    // Insertar nueva selección con precios personalizados
+    for (const item of itemsToInsert) {
       await query(
-        'INSERT INTO acon_section_products (section_id, product_id) VALUES ($1, $2)',
-        [sectionId, pId]
+        'INSERT INTO acon_section_products (section_id, product_id, custom_price) VALUES ($1, $2, $3)',
+        [sectionId, item.id, item.custom_price]
       );
     }
     

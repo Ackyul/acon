@@ -46,6 +46,7 @@ interface Product {
   name: string;
   description?: string;
   price: number;
+  price_aourum?: number | null;
   stock?: number;
   image?: string;
   category?: string;
@@ -136,6 +137,7 @@ export default function Dashboard() {
   // Section Active Products Configuration
   const [sectionProductIds, setSectionProductIds] = useState<number[]>([]);
   const [activeSectionProducts, setActiveSectionProducts] = useState<Product[]>([]);
+  const [customPrices, setCustomPrices] = useState<Record<number, number | null>>({});
   const [configuringCatalog, setConfiguringCatalog] = useState(false);
   const [savingCatalog, setSavingCatalog] = useState(false);
   
@@ -338,6 +340,15 @@ export default function Dashboard() {
         const data = await res.json();
         setActiveSectionProducts(data.active || []);
         setSectionProductIds(data.allIds || []);
+        
+        // Parse custom prices
+        const priceMap: Record<number, number | null> = {};
+        if (Array.isArray(data.customPrices)) {
+          data.customPrices.forEach((item: any) => {
+            priceMap[item.product_id] = item.custom_price;
+          });
+        }
+        setCustomPrices(priceMap);
         
         // If no products selected yet, automatically open catalog selection checklist
         if (!data.allIds || data.allIds.length === 0) {
@@ -735,10 +746,15 @@ export default function Dashboard() {
     if (!selectedSection) return;
     setSavingCatalog(true);
     try {
+      const productsPayload = sectionProductIds.map(pId => ({
+        id: pId,
+        custom_price: customPrices[pId] !== undefined ? customPrices[pId] : null
+      }));
+
       const res = await fetch(`${API_BASE}/sections/${selectedSection.id}/products`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productIds: sectionProductIds })
+        body: JSON.stringify({ products: productsPayload })
       });
       if (res.ok) {
         setConfiguringCatalog(false);
@@ -1320,6 +1336,8 @@ export default function Dashboard() {
                                   }
                                   return filtered.map(p => {
                                     const isChecked = sectionProductIds.includes(p.id);
+                                    const basePrice = (p.price_aourum !== null && p.price_aourum !== undefined) ? p.price_aourum : p.price;
+                                    const currentCustomPrice = customPrices[p.id];
                                     return (
                                       <div
                                         key={p.id}
@@ -1334,7 +1352,41 @@ export default function Dashboard() {
                                           </div>
                                           <span className="text-xs text-slate-200 font-semibold">{p.name}</span>
                                         </div>
-                                        <span className="text-xs text-slate-500">S/. {p.price}</span>
+                                        {isChecked ? (
+                                          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                            {p.price_aourum !== null && p.price_aourum !== undefined && (
+                                              <div className="text-right flex flex-col justify-center shrink-0">
+                                                <span className="text-[9px] text-slate-500 line-through">
+                                                  S/. {p.price_aourum}
+                                                </span>
+                                                <span className="text-[7px] text-[#6699FF] font-bold uppercase tracking-wider">Aourum</span>
+                                              </div>
+                                            )}
+                                            <div className="relative flex items-center">
+                                              <span className="absolute left-2 text-[10px] text-slate-400 font-medium pointer-events-none">S/.</span>
+                                              <input
+                                                type="number"
+                                                step="0.01"
+                                                placeholder={String(basePrice)}
+                                                value={currentCustomPrice !== null && currentCustomPrice !== undefined ? currentCustomPrice : ''}
+                                                onChange={e => {
+                                                  const val = e.target.value === '' ? null : Number(e.target.value);
+                                                  setCustomPrices(prev => ({
+                                                    ...prev,
+                                                    [p.id]: val
+                                                  }));
+                                                }}
+                                                className="w-20 bg-white/[0.03] border border-white/[0.08] focus:border-[#0044CC]/60 rounded-lg pl-6 pr-2 py-1 text-xs text-white focus:outline-none text-right placeholder-slate-500 transition-colors"
+                                              />
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span className="text-xs text-slate-500">
+                                            S/. {basePrice} {p.price_aourum !== null && p.price_aourum !== undefined && (
+                                              <span className="ml-1 text-[8px] bg-[#0044CC]/20 text-[#6699FF] px-1 rounded font-bold border border-[#0044CC]/30">AOURUM</span>
+                                            )}
+                                          </span>
+                                        )}
                                       </div>
                                     );
                                   });

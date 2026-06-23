@@ -104,6 +104,7 @@ export async function initDb() {
         id SERIAL PRIMARY KEY,
         section_id INTEGER REFERENCES acon_sections(id) ON DELETE CASCADE,
         product_id INTEGER NOT NULL,
+        custom_price NUMERIC(10, 2),
         UNIQUE(section_id, product_id)
       );
 
@@ -138,6 +139,7 @@ export async function initDb() {
     await query(`
       ALTER TABLE acon_brands ADD COLUMN IF NOT EXISTS sales_enabled BOOLEAN DEFAULT true;
       ALTER TABLE acon_brands ADD COLUMN IF NOT EXISTS inventory_enabled BOOLEAN DEFAULT true;
+      ALTER TABLE acon_section_products ADD COLUMN IF NOT EXISTS custom_price NUMERIC(10, 2);
     `);
 
     console.log('✅ Base de datos Acon inicializada correctamente.');
