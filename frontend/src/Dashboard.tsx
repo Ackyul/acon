@@ -146,6 +146,8 @@ export default function Dashboard() {
   const [addingCollaborator, setAddingCollaborator] = useState(false);
   const [collaboratorError, setCollaboratorError] = useState('');
   const [collaboratorSuccess, setCollaboratorSuccess] = useState('');
+  const [searchUsers, setSearchUsers] = useState<Collaborator[]>([]);
+  const [loadingSearchUsers, setLoadingSearchUsers] = useState(false);
 
   // Form Section creation
   const [newSectionName, setNewSectionName] = useState('');
@@ -222,6 +224,31 @@ export default function Dashboard() {
     fetchSectionProducts(String(selectedSection.id));
     fetchSectionSalesHistory(String(selectedSection.id));
   }, [selectedSection]);
+
+  // Debounced search for collaborators
+  useEffect(() => {
+    if (!newCollaboratorUsername.trim() || !brandId) {
+      setSearchUsers([]);
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      setLoadingSearchUsers(true);
+      try {
+        const res = await fetch(`${API_BASE}/users/search?q=${encodeURIComponent(newCollaboratorUsername.trim())}&brand_id=${brandId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSearchUsers(data);
+        }
+      } catch (e) {
+        console.error('Error searching users:', e);
+      } finally {
+        setLoadingSearchUsers(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [newCollaboratorUsername, brandId]);
 
   const fetchBrandDetails = async (id: string, user: string) => {
     setLoadingBrand(true);
@@ -555,9 +582,8 @@ export default function Dashboard() {
   };
 
   // Collaborator Management
-  const handleAddCollaborator = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCollaboratorUsername.trim() || !brand || !currentUser) return;
+  const handleAddCollaboratorDirectly = async (username: string) => {
+    if (!brand || !currentUser) return;
     
     setAddingCollaborator(true);
     setCollaboratorError('');
@@ -567,13 +593,13 @@ export default function Dashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: newCollaboratorUsername.trim().toLowerCase(),
+          username: username.trim().toLowerCase(),
           owner_username: currentUser
         })
       });
       const data = await res.json();
       if (res.ok) {
-        setCollaboratorSuccess(`¡Se agregó a ${newCollaboratorUsername} como colaborador!`);
+        setCollaboratorSuccess(`¡Se agregó a ${username} como colaborador!`);
         setNewCollaboratorUsername('');
         fetchCollaborators(String(brand.id));
       } else {
@@ -584,6 +610,12 @@ export default function Dashboard() {
     } finally {
       setAddingCollaborator(false);
     }
+  };
+
+  const handleAddCollaborator = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCollaboratorUsername.trim()) return;
+    await handleAddCollaboratorDirectly(newCollaboratorUsername.trim());
   };
 
   const handleRemoveCollaborator = async (collabUsername: string) => {
@@ -1893,27 +1925,75 @@ export default function Dashboard() {
                   )}
 
                   {/* Add collaborator form */}
-                  <form onSubmit={handleAddCollaborator} className="flex gap-2 items-end p-4 rounded-xl border border-white/[0.05] bg-white/[0.01]">
-                    <div className="flex-1">
-                      <label className="block text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1.5">Nombre de Usuario Acon</label>
-                      <input 
-                        type="text" 
-                        placeholder="Ej. pedroperez" 
-                        value={newCollaboratorUsername} 
-                        onChange={e => setNewCollaboratorUsername(e.target.value)}
-                        required
-                        className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#0044CC]/50 transition-colors" 
-                      />
-                    </div>
-                    <button 
-                      type="submit"
-                      disabled={addingCollaborator || !newCollaboratorUsername.trim()}
-                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#0044CC] to-[#2266FF] text-white text-xs font-bold cursor-pointer shrink-0 disabled:opacity-40 transition-all"
-                    >
-                      {addingCollaborator ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                      <span>Agregar</span>
-                    </button>
-                  </form>
+                  <div className="space-y-3">
+                    <form onSubmit={handleAddCollaborator} className="flex gap-2 items-end p-4 rounded-xl border border-white/[0.05] bg-white/[0.01]">
+                      <div className="flex-1">
+                        <label className="block text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1.5">Nombre de Usuario Acon</label>
+                        <input 
+                          type="text" 
+                          placeholder="Ej. pedroperez" 
+                          value={newCollaboratorUsername} 
+                          onChange={e => setNewCollaboratorUsername(e.target.value)}
+                          required
+                          className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#0044CC]/50 transition-colors" 
+                        />
+                      </div>
+                      <button 
+                        type="submit"
+                        disabled={addingCollaborator || !newCollaboratorUsername.trim()}
+                        className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#0044CC] to-[#2266FF] text-white text-xs font-bold cursor-pointer shrink-0 disabled:opacity-40 transition-all"
+                      >
+                        {addingCollaborator ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                        <span>Agregar</span>
+                      </button>
+                    </form>
+
+                    {/* Sugerencias de búsqueda de usuarios */}
+                    {newCollaboratorUsername.trim() !== '' && (
+                      <div className="border border-white/[0.06] rounded-xl max-h-[160px] overflow-y-auto p-1 bg-black/40 space-y-1">
+                        {loadingSearchUsers ? (
+                          <div className="flex items-center justify-center py-4 text-slate-500 gap-1.5">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#2266FF]" />
+                            <span className="text-[10px]">Buscando usuarios...</span>
+                          </div>
+                        ) : searchUsers.length === 0 ? (
+                          <div className="text-center py-4 text-slate-600 text-[10px]">
+                            No se encontraron usuarios coincidentes
+                          </div>
+                        ) : (
+                          searchUsers.map((user) => (
+                            <div
+                              key={user.username}
+                              onClick={() => setNewCollaboratorUsername(user.username)}
+                              className="flex items-center justify-between p-2 rounded-lg hover:bg-white/[0.04] transition-colors group cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 flex items-center justify-center text-[10px] font-bold text-[#6699FF] shrink-0">
+                                  {user.first_name[0].toUpperCase()}{user.last_name[0].toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-white truncate group-hover:text-[#6699FF] transition-colors">
+                                    {user.first_name} {user.last_name}
+                                  </p>
+                                  <p className="text-[9px] text-slate-500 truncate">@{user.username}</p>
+                                </div>
+                              </div>
+                              <button 
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAddCollaboratorDirectly(user.username);
+                                }}
+                                className="p-1 rounded-lg hover:bg-[#0044CC]/20 text-slate-500 hover:text-[#6699FF] transition-colors shrink-0"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Collaborators List */}
                   <div className="space-y-3">

@@ -633,6 +633,43 @@ app.delete('/api/internal-items/:id', async (req, res) => {
   }
 });
 
+// Búsqueda de usuarios para colaboradores
+app.get('/api/users/search', async (req, res) => {
+  const { q, brand_id } = req.query;
+  if (!q || typeof q !== 'string' || !q.trim()) {
+    return res.json([]);
+  }
+  const searchPattern = `%${q.trim()}%`;
+  try {
+    let sql = `
+      SELECT username, first_name, last_name 
+      FROM acon_users 
+      WHERE (username ILIKE $1 OR first_name ILIKE $1 OR last_name ILIKE $1)
+    `;
+    const params: any[] = [searchPattern];
+    
+    if (brand_id) {
+      sql += `
+        AND username NOT IN (
+          SELECT owner_username FROM acon_brands WHERE id = $2
+        )
+        AND username NOT IN (
+          SELECT username FROM acon_brand_collaborators WHERE acon_brand_id = $2
+        )
+      `;
+      params.push(Number(brand_id));
+    }
+    
+    sql += ` ORDER BY username ASC LIMIT 10`;
+    
+    const result = await query(sql, params);
+    return res.json(result.rows);
+  } catch (error) {
+    console.error('Error searching users:', error);
+    return res.status(500).json({ error: 'Error al buscar usuarios.' });
+  }
+});
+
 // ── Colaboradores de Marca ───────────────────────────────────────
 // Obtener colaboradores
 app.get('/api/brands/:id/collaborators', async (req, res) => {
