@@ -518,6 +518,20 @@ app.post('/api/sales', async (req, res) => {
   }
 
   try {
+    await query('BEGIN');
+
+    // 1. Verificar si la marca es de Aourum o Local
+    const brandRes = await query(
+      'SELECT aourum_brand_id FROM acon_brands WHERE id = $1',
+      [acon_brand_id]
+    );
+    if (brandRes.rows.length === 0) {
+      await query('ROLLBACK');
+      return res.status(404).json({ error: 'Marca no encontrada.' });
+    }
+    const isAourum = brandRes.rows[0].aourum_brand_id !== null;
+
+    // 2. Insertar en acon_sales
     const saleResult = await query(
       `INSERT INTO acon_sales (acon_brand_id, section_id, created_by, total, created_at)
        VALUES ($1, $2, $3, $4, NOW())
@@ -527,16 +541,40 @@ app.post('/api/sales', async (req, res) => {
 
     const saleId = saleResult.rows[0].id;
 
+    // 3. Procesar cada item (insertar y descontar stock)
     for (const item of items) {
       await query(
         `INSERT INTO acon_sale_items (sale_id, aourum_product_id, product_name, unit_price, quantity)
          VALUES ($1, $2, $3, $4, $5)`,
         [saleId, item.aourum_product_id, item.product_name, item.unit_price, item.quantity]
       );
+
+      if (item.aourum_product_id) {
+        if (isAourum) {
+          // Caso Aourum: Decrementar en acon_aourum_product_stocks
+          await query(
+            `INSERT INTO acon_aourum_product_stocks (acon_brand_id, aourum_product_id, stock)
+             VALUES ($1, $2, 0)
+             ON CONFLICT (acon_brand_id, aourum_product_id)
+             DO UPDATE SET stock = GREATEST(0, acon_aourum_product_stocks.stock - $3)`,
+            [Number(acon_brand_id), Number(item.aourum_product_id), Number(item.quantity)]
+          );
+        } else {
+          // Caso Local: Decrementar en acon_products
+          await query(
+            `UPDATE acon_products
+             SET stock = GREATEST(0, stock - $1)
+             WHERE id = $2 AND acon_brand_id = $3`,
+            [Number(item.quantity), Number(item.aourum_product_id), Number(acon_brand_id)]
+          );
+        }
+      }
     }
 
+    await query('COMMIT');
     return res.status(201).json({ id: saleId, message: 'Venta registrada' });
   } catch (error: unknown) {
+    await query('ROLLBACK');
     const msg = error instanceof Error ? error.message : 'Error desconocido';
     console.error('Error saving sale:', msg);
     return res.status(500).json({ error: msg });

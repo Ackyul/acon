@@ -448,7 +448,7 @@ export default function Dashboard() {
       created_by: currentFullName || currentUser || 'Vendedor',
       total,
       items: cart.map(i => ({
-        aourum_product_id: brand.type === 'aourum' ? i.product.id : null,
+        aourum_product_id: i.product.id,
         product_name: i.product.name,
         unit_price: i.product.price,
         quantity: i.quantity
@@ -467,6 +467,7 @@ export default function Dashboard() {
         setShowCartMobile(false);
         setTimeout(() => setCheckoutSuccess(false), 3000);
         fetchSectionSalesHistory(String(selectedSection.id));
+        fetchSectionProducts(String(selectedSection.id));
       } else {
         const errData = await res.json();
         setCheckoutError(errData.error || 'Error al registrar la venta');
