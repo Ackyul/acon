@@ -2965,9 +2965,32 @@ export default function Dashboard() {
       )}
 
       {/* ── Footer ── */}
-      <footer className="relative z-10 border-t border-white/[0.04] py-5 text-center mt-10">
-        <p className="text-[11px] text-slate-700 tracking-wide">
+      <footer className="relative z-10 border-t border-white/[0.04] py-6 text-center mt-10">
+        <p className="text-[11px] text-slate-600 tracking-wide">
           © 2026 Acon · Plataforma de ventas e inventario para marcas independientes
+        </p>
+        <p className="text-[11px] text-slate-500 tracking-wide mt-1.5">
+          Creado por{' '}
+          <a
+            href="https://ackyul.github.io/yoshuanunez.github.io/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-slate-300 hover:text-white font-semibold underline underline-offset-2 transition-colors"
+          >
+            Yoshua Josafat Núñez Huaccoto
+          </a>{' '}
+          ·{' '}
+          <a
+            href="https://ackyul.github.io/yoshuanunez.github.io/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#D97706] hover:text-[#F59E0B] font-semibold transition-colors"
+          >
+            Ackyul
+          </a>
+        </p>
+        <p className="text-[10px] text-slate-600 tracking-wide mt-1">
+          Arequipa, Perú
         </p>
       </footer>
     </div>
