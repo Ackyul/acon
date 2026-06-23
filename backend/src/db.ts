@@ -124,6 +124,14 @@ export async function initDb() {
         unit_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
         quantity INTEGER NOT NULL DEFAULT 1
       );
+
+      CREATE TABLE IF NOT EXISTS acon_aourum_product_stocks (
+        id SERIAL PRIMARY KEY,
+        acon_brand_id INTEGER REFERENCES acon_brands(id) ON DELETE CASCADE,
+        aourum_product_id INTEGER NOT NULL,
+        stock INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(acon_brand_id, aourum_product_id)
+      );
     `);
 
     // Migraciones rápidas para bases de datos existentes

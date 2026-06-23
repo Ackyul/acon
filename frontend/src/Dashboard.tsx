@@ -89,7 +89,7 @@ interface Collaborator {
 type Tab = 'sales' | 'inventory';
 type SalesSubTab = 'sections' | 'general_history';
 type SectionSubTab = 'counter' | 'history';
-type WarehouseSubTab = 'internal' | 'products' | 'collaborators';
+type WarehouseSubTab = 'internal' | 'inventario' | 'products' | 'collaborators';
 
 const CATEGORY_COLORS: Record<string, string> = {
   Empaque:   'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/20',
@@ -209,9 +209,7 @@ export default function Dashboard() {
       }
     } else if (activeTab === 'inventory') {
       fetchInternalInventory(brandId);
-      if (brand?.type === 'local') {
-        fetchProducts(brandId);
-      }
+      fetchProducts(brandId);
       if (brand?.role === 'owner') {
         fetchCollaborators(brandId);
       }
@@ -616,6 +614,23 @@ export default function Dashboard() {
     e.preventDefault();
     if (!newCollaboratorUsername.trim()) return;
     await handleAddCollaboratorDirectly(newCollaboratorUsername.trim());
+  };
+
+  const handleUpdateProductStock = async (pId: number, currentStock: number, delta: number) => {
+    if (!brand) return;
+    const newStock = Math.max(0, currentStock + delta);
+    try {
+      const res = await fetch(`${API_BASE}/brands/${brand.id}/products/${pId}/stock`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stock: newStock })
+      });
+      if (res.ok) {
+        fetchProducts(String(brand.id));
+      }
+    } catch (e) {
+      console.error('Error updating product stock:', e);
+    }
   };
 
   const handleRemoveCollaborator = async (collabUsername: string) => {
@@ -1595,6 +1610,19 @@ export default function Dashboard() {
                   <Boxes className="w-3.5 h-3.5" />
                   <span>Insumos Internos</span>
                 </button>
+
+                <button
+                  onClick={() => setWarehouseSubTab('inventario')}
+                  className={`flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer
+                    ${warehouseSubTab === 'inventario'
+                      ? brand.type === 'aourum'
+                        ? 'bg-[#0044CC]/20 text-[#6699FF] border border-[#0044CC]/30'
+                        : 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                      : 'text-slate-400 hover:text-white border border-transparent hover:bg-white/[0.02]'}`}
+                >
+                  <Package className="w-3.5 h-3.5" />
+                  <span>Inventario</span>
+                </button>
                 
                 {brand.type === 'local' && (
                   <button
@@ -1624,6 +1652,86 @@ export default function Dashboard() {
                   </button>
                 )}
               </div>
+
+              {/* Subview: Inventario (Conteo de Productos del Catálogo) */}
+              {warehouseSubTab === 'inventario' && (
+                <div className="space-y-5">
+                  <div className="flex items-center gap-2">
+                    <Package className="w-4 h-4 text-[#6699FF]" />
+                    <div>
+                      <h3 className="font-bold text-white text-xs uppercase tracking-wider">Inventario de Productos</h3>
+                      <p className="text-[10px] text-slate-500">Control de stock de productos del catálogo de la marca</p>
+                    </div>
+                  </div>
+
+                  {loadingProducts ? (
+                    <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
+                      <Loader2 className="w-6 h-6 animate-spin text-[#2266FF]" />
+                      <p className="text-xs">Cargando catálogo...</p>
+                    </div>
+                  ) : products.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-white/10 p-12 text-center bg-white/[0.01]">
+                      <Package className="w-8 h-8 text-slate-800 mx-auto mb-2" />
+                      <p className="text-slate-400 text-xs font-medium">Sin productos registrados en el catálogo</p>
+                      <p className="text-[10px] text-slate-600 mt-1">Crea productos en "Gestión de Productos" o vincula una marca con catálogo.</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
+                      <table className="w-full text-left border-collapse text-xs min-w-[500px]">
+                        <thead>
+                          <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
+                            <th className="px-4 py-3">Producto</th>
+                            <th className="px-4 py-3">Categoría</th>
+                            <th className="px-4 py-3">Existencia</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {products.map((prod) => (
+                            <tr key={prod.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
+                              <td className="px-4 py-3 font-semibold text-slate-200">
+                                <div className="flex items-center gap-2.5">
+                                  {prod.image ? (
+                                    <img src={prod.image} alt="" className="w-6.5 h-6.5 rounded object-cover ring-1 ring-white/10 shrink-0" />
+                                  ) : (
+                                    <div className="w-6.5 h-6.5 rounded bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[10px] font-bold text-[#6699FF] shrink-0">
+                                      {prod.name[0]}
+                                    </div>
+                                  )}
+                                  <span>{prod.name}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-slate-300">
+                                  {prod.category || 'Otros'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <button 
+                                    onClick={() => handleUpdateProductStock(prod.id, prod.stock ?? 0, -1)}
+                                    className="w-6.5 h-6.5 rounded-lg bg-white/[0.05] hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer"
+                                  >
+                                    <Minus className="w-3.5 h-3.5" />
+                                  </button>
+                                  <span className={`font-black min-w-[20px] text-center text-sm ${(prod.stock ?? 0) < 5 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
+                                    {prod.stock ?? 0}
+                                  </span>
+                                  <button 
+                                    onClick={() => handleUpdateProductStock(prod.id, prod.stock ?? 0, 1)}
+                                    className="w-6.5 h-6.5 rounded-lg bg-white/[0.05] hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Subview 1: Insumos Internos */}
               {warehouseSubTab === 'internal' && (

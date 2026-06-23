@@ -268,7 +268,20 @@ app.get('/api/brands/:id/products', async (req, res) => {
         .eq('brand_id', brand.aourum_brand_id);
 
       if (error) throw error;
-      return res.json(data || []);
+
+      // Combinar con stocks locales de Acon
+      const stocksRes = await query(
+        'SELECT aourum_product_id, stock FROM acon_aourum_product_stocks WHERE acon_brand_id = $1',
+        [id]
+      );
+      const stocksMap = new Map(stocksRes.rows.map(r => [Number(r.aourum_product_id), Number(r.stock)]));
+
+      const productsWithLocalStock = (data || []).map(p => ({
+        ...p,
+        stock: stocksMap.has(Number(p.id)) ? stocksMap.get(Number(p.id)) : 0
+      }));
+
+      return res.json(productsWithLocalStock);
     } else {
       // Caso Local: Obtener de Neon acon_products
       const productsRes = await query('SELECT * FROM acon_products WHERE acon_brand_id = $1 ORDER BY created_at DESC', [id]);
@@ -309,6 +322,56 @@ app.post('/api/brands/:id/products', async (req, res) => {
   } catch (error) {
     console.error('Error adding local product:', error);
     return res.status(500).json({ error: 'Error interno al agregar producto.' });
+  }
+});
+
+// Actualizar stock de un producto (Local o Aourum)
+app.patch('/api/brands/:brandId/products/:productId/stock', async (req, res) => {
+  const { brandId, productId } = req.params;
+  const { stock } = req.body;
+
+  if (stock === undefined) {
+    return res.status(400).json({ error: 'stock es requerido.' });
+  }
+
+  const newStock = Math.max(0, Number(stock));
+
+  try {
+    const brandRes = await query('SELECT aourum_brand_id FROM acon_brands WHERE id = $1', [brandId]);
+    if (brandRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Marca no encontrada.' });
+    }
+
+    const brand = brandRes.rows[0];
+
+    if (brand.aourum_brand_id !== null) {
+      // Caso Aourum: Upsert en acon_aourum_product_stocks
+      const result = await query(
+        `INSERT INTO acon_aourum_product_stocks (acon_brand_id, aourum_product_id, stock)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (acon_brand_id, aourum_product_id)
+         DO UPDATE SET stock = EXCLUDED.stock
+         RETURNING *`,
+        [Number(brandId), Number(productId), newStock]
+      );
+      return res.json({ success: true, stock: result.rows[0].stock });
+    } else {
+      // Caso Local: Actualizar en acon_products
+      const result = await query(
+        `UPDATE acon_products
+         SET stock = $1
+         WHERE id = $2 AND acon_brand_id = $3
+         RETURNING *`,
+        [newStock, Number(productId), Number(brandId)]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Producto no encontrado.' });
+      }
+      return res.json({ success: true, stock: result.rows[0].stock });
+    }
+  } catch (error) {
+    console.error('Error updating product stock:', error);
+    return res.status(500).json({ error: 'Error al actualizar el stock del producto.' });
   }
 });
 
@@ -867,7 +930,18 @@ app.get('/api/sections/:sectionId/products', async (req, res) => {
         .select('id, name, description, price, stock, image, category')
         .eq('brand_id', aourumBrandId);
       if (error) throw error;
-      allProducts = data || [];
+
+      // Combinar con stocks locales de Acon
+      const stocksRes = await query(
+        'SELECT aourum_product_id, stock FROM acon_aourum_product_stocks WHERE acon_brand_id = $1',
+        [brandId]
+      );
+      const stocksMap = new Map(stocksRes.rows.map(r => [Number(r.aourum_product_id), Number(r.stock)]));
+
+      allProducts = (data || []).map(p => ({
+        ...p,
+        stock: stocksMap.has(Number(p.id)) ? stocksMap.get(Number(p.id)) : 0
+      }));
     } else {
       const localProducts = await query(
         'SELECT * FROM acon_products WHERE acon_brand_id = $1 ORDER BY created_at DESC',
