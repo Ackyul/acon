@@ -1707,20 +1707,27 @@ export default function Dashboard() {
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
-                                  <button 
-                                    onClick={() => handleUpdateProductStock(prod.id, prod.stock ?? 0, -1)}
-                                    className="w-6.5 h-6.5 rounded-lg bg-white/[0.05] hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer"
-                                  >
-                                    <Minus className="w-3.5 h-3.5" />
-                                  </button>
                                   <span className={`font-black min-w-[20px] text-center text-sm ${(prod.stock ?? 0) < 5 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
                                     {prod.stock ?? 0}
                                   </span>
                                   <button 
-                                    onClick={() => handleUpdateProductStock(prod.id, prod.stock ?? 0, 1)}
-                                    className="w-6.5 h-6.5 rounded-lg bg-white/[0.05] hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer"
+                                    onClick={() => {
+                                      const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(prod.stock ?? 0));
+                                      if (val !== null) {
+                                        const trimmed = val.trim();
+                                        let newStock = Number(trimmed);
+                                        if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
+                                          newStock = (prod.stock ?? 0) + Number(trimmed);
+                                        }
+                                        if (!isNaN(newStock)) {
+                                          handleUpdateProductStock(prod.id, newStock, 0);
+                                        }
+                                      }
+                                    }}
+                                    className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
+                                    title="Modificar cantidad"
                                   >
-                                    <Plus className="w-3.5 h-3.5" />
+                                    <Sliders className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </td>
@@ -1827,20 +1834,27 @@ export default function Dashboard() {
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
-                                  <button 
-                                    onClick={() => handleUpdateInternalStock(item.id, item.stock, -1)}
-                                    className="w-6.5 h-6.5 rounded-lg bg-white/[0.05] hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer"
-                                  >
-                                    <Minus className="w-3.5 h-3.5" />
-                                  </button>
                                   <span className={`font-black min-w-[20px] text-center text-sm ${item.stock < 10 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
                                     {item.stock}
                                   </span>
                                   <button 
-                                    onClick={() => handleUpdateInternalStock(item.id, item.stock, 1)}
-                                    className="w-6.5 h-6.5 rounded-lg bg-white/[0.05] hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer"
+                                    onClick={() => {
+                                      const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(item.stock));
+                                      if (val !== null) {
+                                        const trimmed = val.trim();
+                                        let newStock = Number(trimmed);
+                                        if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
+                                          newStock = item.stock + Number(trimmed);
+                                        }
+                                        if (!isNaN(newStock)) {
+                                          handleUpdateInternalStock(item.id, newStock, 0);
+                                        }
+                                      }
+                                    }}
+                                    className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
+                                    title="Modificar cantidad"
                                   >
-                                    <Plus className="w-3.5 h-3.5" />
+                                    <Sliders className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </td>
