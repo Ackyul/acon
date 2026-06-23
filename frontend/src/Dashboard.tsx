@@ -1399,7 +1399,13 @@ export default function Dashboard() {
                                           </div>
                                         )}
                                         <div className="min-w-0 flex-1">
-                                          <h4 className="font-semibold text-xs text-white truncate leading-tight group-hover:text-[#6699FF] transition-colors">{product.name}</h4>
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <h4 className="font-semibold text-xs text-white truncate leading-tight group-hover:text-[#6699FF] transition-colors">{product.name}</h4>
+                                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wide uppercase shrink-0
+                                              ${(product.stock ?? 0) > 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                                              {(product.stock ?? 0) > 0 ? `${product.stock} u.` : 'Sin stock'}
+                                            </span>
+                                          </div>
                                           <p className="text-[10px] text-slate-500 truncate mt-0.5">{product.category || 'Otros'}</p>
                                           <p className={`text-xs font-bold mt-1 ${isLocal ? 'text-violet-400' : 'text-[#6699FF]'}`}>S/. {Number(product.price).toFixed(2)}</p>
                                         </div>
@@ -1677,66 +1683,132 @@ export default function Dashboard() {
                       <p className="text-[10px] text-slate-600 mt-1">Crea productos en "Gestión de Productos" o vincula una marca con catálogo.</p>
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
-                      <table className="w-full text-left border-collapse text-xs min-w-[500px]">
-                        <thead>
-                          <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
-                            <th className="px-4 py-3">Producto</th>
-                            <th className="px-4 py-3">Categoría</th>
-                            <th className="px-4 py-3">Existencia</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {products.map((prod) => (
-                            <tr key={prod.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
-                              <td className="px-4 py-3 font-semibold text-slate-200">
-                                <div className="flex items-center gap-2.5">
-                                  {prod.image ? (
-                                    <img src={prod.image} alt="" className="w-6.5 h-6.5 rounded object-cover ring-1 ring-white/10 shrink-0" />
-                                  ) : (
-                                    <div className="w-6.5 h-6.5 rounded bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[10px] font-bold text-[#6699FF] shrink-0">
-                                      {prod.name[0]}
-                                    </div>
-                                  )}
-                                  <span>{prod.name}</span>
+                    <>
+                      {/* Desktop View Table */}
+                      <div className="hidden md:block rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
+                        <table className="w-full text-left border-collapse text-xs min-w-[500px]">
+                          <thead>
+                            <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
+                              <th className="px-4 py-3">Producto</th>
+                              <th className="px-4 py-3">Categoría</th>
+                              <th className="px-4 py-3">Existencia</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {products.map((prod) => (
+                              <tr key={prod.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
+                                <td className="px-4 py-3 font-semibold text-slate-200">
+                                  <div className="flex items-center gap-2.5">
+                                    {prod.image ? (
+                                      <img src={prod.image} alt="" className="w-6.5 h-6.5 rounded object-cover ring-1 ring-white/10 shrink-0" />
+                                    ) : (
+                                      <div className="w-6.5 h-6.5 rounded bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[10px] font-bold text-[#6699FF] shrink-0">
+                                        {prod.name[0]}
+                                      </div>
+                                    )}
+                                    <span>{prod.name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-slate-300">
+                                    {prod.category || 'Otros'}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-black min-w-[20px] text-center text-sm ${(prod.stock ?? 0) < 5 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
+                                      {prod.stock ?? 0}
+                                    </span>
+                                    <button 
+                                      onClick={() => {
+                                        const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(prod.stock ?? 0));
+                                        if (val !== null) {
+                                          const trimmed = val.trim();
+                                          let newStock = Number(trimmed);
+                                          if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
+                                            newStock = (prod.stock ?? 0) + Number(trimmed);
+                                          }
+                                          if (!isNaN(newStock)) {
+                                            handleUpdateProductStock(prod.id, newStock, 0);
+                                          }
+                                        }
+                                      }}
+                                      className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
+                                      title="Modificar cantidad"
+                                    >
+                                      <Sliders className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Mobile Card-based View */}
+                      <div className="block md:hidden space-y-3">
+                        {products.map((prod) => (
+                          <div key={prod.id} className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.015] flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              {prod.image ? (
+                                <img src={prod.image} alt="" className="w-10 h-10 rounded-lg object-cover ring-1 ring-white/10 shrink-0" />
+                              ) : (
+                                <div className="w-10 h-10 rounded-lg bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-xs font-bold text-[#6699FF] shrink-0">
+                                  {prod.name[0]}
                                 </div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-slate-300">
+                              )}
+                              <div className="min-w-0">
+                                <p className="font-bold text-xs text-white truncate">{prod.name}</p>
+                                <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.06] text-[9px] text-slate-400">
                                   {prod.category || 'Otros'}
                                 </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
-                                  <span className={`font-black min-w-[20px] text-center text-sm ${(prod.stock ?? 0) < 5 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
-                                    {prod.stock ?? 0}
-                                  </span>
-                                  <button 
-                                    onClick={() => {
-                                      const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(prod.stock ?? 0));
-                                      if (val !== null) {
-                                        const trimmed = val.trim();
-                                        let newStock = Number(trimmed);
-                                        if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
-                                          newStock = (prod.stock ?? 0) + Number(trimmed);
-                                        }
-                                        if (!isNaN(newStock)) {
-                                          handleUpdateProductStock(prod.id, newStock, 0);
-                                        }
-                                      }
-                                    }}
-                                    className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
-                                    title="Modificar cantidad"
-                                  >
-                                    <Sliders className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div className="flex items-center bg-black/40 border border-white/[0.08] rounded-xl p-0.5 gap-0.5 shadow-inner">
+                                <button
+                                  onClick={() => handleUpdateProductStock(prod.id, Math.max(0, (prod.stock ?? 0) - 1), 0)}
+                                  className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-red-400 transition-all cursor-pointer"
+                                >
+                                  <Minus className="w-3 h-3" />
+                                </button>
+                                <span className={`w-8 text-center text-xs font-black ${(prod.stock ?? 0) < 5 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
+                                  {prod.stock ?? 0}
+                                </span>
+                                <button
+                                  onClick={() => handleUpdateProductStock(prod.id, (prod.stock ?? 0) + 1, 0)}
+                                  className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-emerald-400 transition-all cursor-pointer"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                              </div>
+
+                              <button 
+                                onClick={() => {
+                                  const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(prod.stock ?? 0));
+                                  if (val !== null) {
+                                    const trimmed = val.trim();
+                                    let newStock = Number(trimmed);
+                                    if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
+                                      newStock = (prod.stock ?? 0) + Number(trimmed);
+                                    }
+                                    if (!isNaN(newStock)) {
+                                      handleUpdateProductStock(prod.id, newStock, 0);
+                                    }
+                                  }
+                                }}
+                                className="w-8 h-8 rounded-xl bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] transition-all cursor-pointer"
+                                title="Modificar cantidad"
+                              >
+                                <Sliders className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </div>
               )}
@@ -1814,64 +1886,132 @@ export default function Dashboard() {
                       <p className="text-[10px] text-slate-600 mt-1">Agrega materiales arriba para monitorear sus existencias.</p>
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
-                      <table className="w-full text-left border-collapse text-xs min-w-[500px]">
-                        <thead>
-                          <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
-                            <th className="px-4 py-3">Insumo</th>
-                            <th className="px-4 py-3">Categoría</th>
-                            <th className="px-4 py-3">Existencia</th>
-                            <th className="px-4 py-3 text-right">Acción</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {internalInventory.map((item) => (
-                            <tr key={item.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
-                              <td className="px-4 py-3 font-semibold text-slate-200">{item.name}</td>
-                              <td className="px-4 py-3">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${CATEGORY_COLORS[item.category] || CATEGORY_COLORS['Otros']}`}>
+                    <>
+                      {/* Desktop View Table */}
+                      <div className="hidden md:block rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
+                        <table className="w-full text-left border-collapse text-xs min-w-[500px]">
+                          <thead>
+                            <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
+                              <th className="px-4 py-3">Insumo</th>
+                              <th className="px-4 py-3">Categoría</th>
+                              <th className="px-4 py-3">Existencia</th>
+                              <th className="px-4 py-3 text-right">Acción</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {internalInventory.map((item) => (
+                              <tr key={item.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
+                                <td className="px-4 py-3 font-semibold text-slate-200">{item.name}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${CATEGORY_COLORS[item.category] || CATEGORY_COLORS['Otros']}`}>
+                                    {item.category}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-black min-w-[20px] text-center text-sm ${item.stock < 10 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
+                                      {item.stock}
+                                    </span>
+                                    <button 
+                                      onClick={() => {
+                                        const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(item.stock));
+                                        if (val !== null) {
+                                          const trimmed = val.trim();
+                                          let newStock = Number(trimmed);
+                                          if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
+                                            newStock = item.stock + Number(trimmed);
+                                          }
+                                          if (!isNaN(newStock)) {
+                                            handleUpdateInternalStock(item.id, newStock, 0);
+                                          }
+                                        }
+                                      }}
+                                      className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
+                                      title="Modificar cantidad"
+                                    >
+                                      <Sliders className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <button 
+                                    onClick={() => handleDeleteInternalItem(item.id)}
+                                    className="w-7 h-7 rounded-lg bg-red-500/[0.08] hover:bg-red-500/20 flex items-center justify-center text-red-400 transition-all cursor-pointer ml-auto"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Mobile Card-based View */}
+                      <div className="block md:hidden space-y-3">
+                        {internalInventory.map((item) => (
+                          <div key={item.id} className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.015] space-y-3">
+                            <div className="flex justify-between items-start gap-2">
+                              <div>
+                                <h4 className="font-bold text-xs text-white">{item.name}</h4>
+                                <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-semibold ${CATEGORY_COLORS[item.category] || CATEGORY_COLORS['Otros']}`}>
                                   {item.category}
                                 </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
-                                  <span className={`font-black min-w-[20px] text-center text-sm ${item.stock < 10 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
+                              </div>
+                              <button 
+                                onClick={() => handleDeleteInternalItem(item.id)}
+                                className="w-7.5 h-7.5 rounded-lg bg-red-500/[0.08] active:bg-red-500/20 flex items-center justify-center text-red-400 transition-all cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <div className="flex items-center justify-between border-t border-white/[0.03] pt-3.5">
+                              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Existencia</span>
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center bg-black/40 border border-white/[0.08] rounded-xl p-0.5 gap-0.5 shadow-inner">
+                                  <button
+                                    onClick={() => handleUpdateInternalStock(item.id, Math.max(0, item.stock - 1), 0)}
+                                    className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-red-400 transition-all cursor-pointer"
+                                  >
+                                    <Minus className="w-3 h-3" />
+                                  </button>
+                                  <span className={`w-8 text-center text-xs font-black ${item.stock < 10 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
                                     {item.stock}
                                   </span>
-                                  <button 
-                                    onClick={() => {
-                                      const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(item.stock));
-                                      if (val !== null) {
-                                        const trimmed = val.trim();
-                                        let newStock = Number(trimmed);
-                                        if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
-                                          newStock = item.stock + Number(trimmed);
-                                        }
-                                        if (!isNaN(newStock)) {
-                                          handleUpdateInternalStock(item.id, newStock, 0);
-                                        }
-                                      }
-                                    }}
-                                    className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
-                                    title="Modificar cantidad"
+                                  <button
+                                    onClick={() => handleUpdateInternalStock(item.id, item.stock + 1, 0)}
+                                    className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-emerald-400 transition-all cursor-pointer"
                                   >
-                                    <Sliders className="w-3.5 h-3.5" />
+                                    <Plus className="w-3 h-3" />
                                   </button>
                                 </div>
-                              </td>
-                              <td className="px-4 py-3 text-right">
+
                                 <button 
-                                  onClick={() => handleDeleteInternalItem(item.id)}
-                                  className="w-7 h-7 rounded-lg bg-red-500/[0.08] hover:bg-red-500/20 flex items-center justify-center text-red-400 transition-all cursor-pointer ml-auto"
+                                  onClick={() => {
+                                    const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(item.stock));
+                                    if (val !== null) {
+                                      const trimmed = val.trim();
+                                      let newStock = Number(trimmed);
+                                      if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
+                                        newStock = item.stock + Number(trimmed);
+                                      }
+                                      if (!isNaN(newStock)) {
+                                        handleUpdateInternalStock(item.id, newStock, 0);
+                                      }
+                                    }
+                                  }}
+                                  className="w-8 h-8 rounded-xl bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] transition-all cursor-pointer"
+                                  title="Modificar cantidad"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Sliders className="w-3.5 h-3.5" />
                                 </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </div>
               )}
@@ -1986,34 +2126,63 @@ export default function Dashboard() {
                         <p className="text-[10px] text-slate-600 mt-1">Completa el formulario de arriba para poblar el catálogo de ventas.</p>
                       </div>
                     ) : (
-                      <div className="rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
-                        <table className="w-full text-left border-collapse text-xs min-w-[550px]">
-                          <thead>
-                            <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
-                              <th className="px-4 py-3">Nombre</th>
-                              <th className="px-4 py-3">Categoría</th>
-                              <th className="px-4 py-3">Precio</th>
-                              <th className="px-4 py-3">Stock</th>
-                              <th className="px-4 py-3">Descripción</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {products.map((prod) => (
-                              <tr key={prod.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
-                                <td className="px-4 py-3 font-semibold text-slate-200">{prod.name}</td>
-                                <td className="px-4 py-3">
-                                  <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-slate-300">
-                                    {prod.category || 'Otros'}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 font-bold text-violet-300">S/. {Number(prod.price).toFixed(2)}</td>
-                                <td className="px-4 py-3 font-semibold text-white">{prod.stock ?? 0} u.</td>
-                                <td className="px-4 py-3 text-slate-500 italic max-w-[200px] truncate">{prod.description || 'Sin descripción'}</td>
+                      <>
+                        {/* Desktop View Table */}
+                        <div className="hidden md:block rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
+                          <table className="w-full text-left border-collapse text-xs min-w-[550px]">
+                            <thead>
+                              <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
+                                <th className="px-4 py-3">Nombre</th>
+                                <th className="px-4 py-3">Categoría</th>
+                                <th className="px-4 py-3">Precio</th>
+                                <th className="px-4 py-3">Stock</th>
+                                <th className="px-4 py-3">Descripción</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                            </thead>
+                            <tbody>
+                              {products.map((prod) => (
+                                <tr key={prod.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
+                                  <td className="px-4 py-3 font-semibold text-slate-200">{prod.name}</td>
+                                  <td className="px-4 py-3">
+                                    <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-slate-300">
+                                      {prod.category || 'Otros'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 font-bold text-violet-300">S/. {Number(prod.price).toFixed(2)}</td>
+                                  <td className="px-4 py-3 font-semibold text-white">{prod.stock ?? 0} u.</td>
+                                  <td className="px-4 py-3 text-slate-500 italic max-w-[200px] truncate">{prod.description || 'Sin descripción'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Mobile Card-based View */}
+                        <div className="block md:hidden space-y-3">
+                          {products.map((prod) => (
+                            <div key={prod.id} className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.015] space-y-2">
+                              <div className="flex justify-between items-start gap-2">
+                                <h4 className="font-bold text-xs text-white">{prod.name}</h4>
+                                <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[9px] text-slate-300">
+                                  {prod.category || 'Otros'}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 italic leading-relaxed">{prod.description || 'Sin descripción'}</p>
+                              
+                              <div className="flex items-center justify-between pt-2.5 border-t border-white/[0.03] text-xs">
+                                <div>
+                                  <span className="text-[9px] text-slate-500 uppercase font-bold block">Precio</span>
+                                  <span className="font-bold text-violet-300">S/. {Number(prod.price).toFixed(2)}</span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-[9px] text-slate-500 uppercase font-bold block">Stock</span>
+                                  <span className="font-semibold text-white">{prod.stock ?? 0} u.</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
                     )}
                   </div>
 
@@ -2130,33 +2299,60 @@ export default function Dashboard() {
                     ) : collaborators.length === 0 ? (
                       <p className="text-xs text-slate-500 italic py-4">Aún no has agregado colaboradores a tu equipo.</p>
                     ) : (
-                      <div className="rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
-                        <table className="w-full text-left border-collapse text-xs min-w-[400px]">
-                          <thead>
-                            <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
-                              <th className="px-4 py-3">Nombre</th>
-                              <th className="px-4 py-3">Usuario</th>
-                              <th className="px-4 py-3 text-right">Remover</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {collaborators.map((collab) => (
-                              <tr key={collab.username} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
-                                <td className="px-4 py-3 font-semibold text-slate-200">{collab.first_name} {collab.last_name}</td>
-                                <td className="px-4 py-3 text-slate-400 font-mono">@{collab.username}</td>
-                                <td className="px-4 py-3 text-right">
-                                  <button 
-                                    onClick={() => handleRemoveCollaborator(collab.username)}
-                                    className="w-7 h-7 rounded-lg bg-red-500/[0.08] hover:bg-red-500/20 flex items-center justify-center text-red-400 transition-all cursor-pointer ml-auto"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </td>
+                      <>
+                        {/* Desktop View Table */}
+                        <div className="hidden md:block rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
+                          <table className="w-full text-left border-collapse text-xs min-w-[400px]">
+                            <thead>
+                              <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
+                                <th className="px-4 py-3">Nombre</th>
+                                <th className="px-4 py-3">Usuario</th>
+                                <th className="px-4 py-3 text-right">Remover</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                            </thead>
+                            <tbody>
+                              {collaborators.map((collab) => (
+                                <tr key={collab.username} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
+                                  <td className="px-4 py-3 font-semibold text-slate-200">{collab.first_name} {collab.last_name}</td>
+                                  <td className="px-4 py-3 text-slate-400 font-mono">@{collab.username}</td>
+                                  <td className="px-4 py-3 text-right">
+                                    <button 
+                                      onClick={() => handleRemoveCollaborator(collab.username)}
+                                      className="w-7 h-7 rounded-lg bg-red-500/[0.08] hover:bg-red-500/20 flex items-center justify-center text-red-400 transition-all cursor-pointer ml-auto"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Mobile Card-based View */}
+                        <div className="block md:hidden space-y-3">
+                          {collaborators.map((collab) => (
+                            <div key={collab.username} className="p-3 rounded-xl border border-white/[0.06] bg-white/[0.015] flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-lg bg-[#0044CC]/20 flex items-center justify-center text-xs font-bold text-[#6699FF] shrink-0">
+                                  {collab.first_name[0].toUpperCase()}{collab.last_name[0].toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-white truncate">{collab.first_name} {collab.last_name}</p>
+                                  <p className="text-[10px] text-slate-500 font-mono">@{collab.username}</p>
+                                </div>
+                              </div>
+
+                              <button 
+                                onClick={() => handleRemoveCollaborator(collab.username)}
+                                className="w-8 h-8 rounded-lg bg-red-500/[0.08] active:bg-red-500/20 flex items-center justify-center text-red-400 transition-all cursor-pointer shrink-0"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </>
                     )}
                   </div>
 
