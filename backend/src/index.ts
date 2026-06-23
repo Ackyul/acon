@@ -328,7 +328,7 @@ app.post('/api/brands/:id/products', async (req, res) => {
 // Actualizar stock de un producto (Local o Aourum)
 app.patch('/api/brands/:brandId/products/:productId/stock', async (req, res) => {
   const { brandId, productId } = req.params;
-  const { stock } = req.body;
+  const { stock, username } = req.body;
 
   if (stock === undefined) {
     return res.status(400).json({ error: 'stock es requerido.' });
@@ -345,7 +345,22 @@ app.patch('/api/brands/:brandId/products/:productId/stock', async (req, res) => 
     const brand = brandRes.rows[0];
 
     if (brand.aourum_brand_id !== null) {
-      // Caso Aourum: Upsert en acon_aourum_product_stocks
+      // Caso Aourum: Obtener stock anterior y nombre de producto
+      const prevStockRes = await query(
+        'SELECT stock FROM acon_aourum_product_stocks WHERE acon_brand_id = $1 AND aourum_product_id = $2',
+        [Number(brandId), Number(productId)]
+      );
+      const previousStock = prevStockRes.rows.length > 0 ? Number(prevStockRes.rows[0].stock) : 0;
+
+      const { data: prodData } = await aourumSupabase
+        .from('products')
+        .select('name')
+        .eq('id', productId)
+        .single();
+      const productName = prodData?.name || `Producto Aourum #${productId}`;
+      const delta = newStock - previousStock;
+
+      // Upsert en acon_aourum_product_stocks
       const result = await query(
         `INSERT INTO acon_aourum_product_stocks (acon_brand_id, aourum_product_id, stock)
          VALUES ($1, $2, $3)
@@ -354,9 +369,31 @@ app.patch('/api/brands/:brandId/products/:productId/stock', async (req, res) => 
          RETURNING *`,
         [Number(brandId), Number(productId), newStock]
       );
+
+      // Registrar en historial si hay cambio
+      if (delta !== 0) {
+        await query(
+          `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [Number(brandId), Number(productId), productName, 'aourum', previousStock, newStock, delta, username || 'Sistema']
+        );
+      }
+
       return res.json({ success: true, stock: result.rows[0].stock });
     } else {
-      // Caso Local: Actualizar en acon_products
+      // Caso Local: Obtener stock anterior y nombre
+      const prevProdRes = await query(
+        'SELECT name, stock FROM acon_products WHERE id = $1 AND acon_brand_id = $2',
+        [Number(productId), Number(brandId)]
+      );
+      if (prevProdRes.rows.length === 0) {
+        return res.status(404).json({ error: 'Producto no encontrado.' });
+      }
+      const previousStock = Number(prevProdRes.rows[0].stock);
+      const productName = prevProdRes.rows[0].name;
+      const delta = newStock - previousStock;
+
+      // Actualizar en acon_products
       const result = await query(
         `UPDATE acon_products
          SET stock = $1
@@ -364,9 +401,16 @@ app.patch('/api/brands/:brandId/products/:productId/stock', async (req, res) => 
          RETURNING *`,
         [newStock, Number(productId), Number(brandId)]
       );
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Producto no encontrado.' });
+
+      // Registrar en historial si hay cambio
+      if (delta !== 0) {
+        await query(
+          `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [Number(brandId), Number(productId), productName, 'local', previousStock, newStock, delta, username || 'Sistema']
+        );
       }
+
       return res.json({ success: true, stock: result.rows[0].stock });
     }
   } catch (error) {
@@ -551,22 +595,52 @@ app.post('/api/sales', async (req, res) => {
 
       if (item.aourum_product_id) {
         if (isAourum) {
-          // Caso Aourum: Decrementar en acon_aourum_product_stocks
+          // Caso Aourum: Obtener stock anterior, calcular nuevo, actualizar y registrar historial
+          const prevRes = await query(
+            'SELECT stock FROM acon_aourum_product_stocks WHERE acon_brand_id = $1 AND aourum_product_id = $2',
+            [Number(acon_brand_id), Number(item.aourum_product_id)]
+          );
+          const previousStock = prevRes.rows.length > 0 ? Number(prevRes.rows[0].stock) : 0;
+          const newStock = Math.max(0, previousStock - Number(item.quantity));
+          const delta = -Number(item.quantity);
+
           await query(
             `INSERT INTO acon_aourum_product_stocks (acon_brand_id, aourum_product_id, stock)
-             VALUES ($1, $2, 0)
+             VALUES ($1, $2, $3)
              ON CONFLICT (acon_brand_id, aourum_product_id)
-             DO UPDATE SET stock = GREATEST(0, acon_aourum_product_stocks.stock - $3)`,
-            [Number(acon_brand_id), Number(item.aourum_product_id), Number(item.quantity)]
+             DO UPDATE SET stock = $3`,
+            [Number(acon_brand_id), Number(item.aourum_product_id), newStock]
+          );
+
+          await query(
+            `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [Number(acon_brand_id), Number(item.aourum_product_id), item.product_name, 'aourum', previousStock, newStock, delta, created_by || 'Venta (Caja)']
           );
         } else {
-          // Caso Local: Decrementar en acon_products
-          await query(
-            `UPDATE acon_products
-             SET stock = GREATEST(0, stock - $1)
-             WHERE id = $2 AND acon_brand_id = $3`,
-            [Number(item.quantity), Number(item.aourum_product_id), Number(acon_brand_id)]
+          // Caso Local: Obtener stock anterior, calcular nuevo, actualizar y registrar historial
+          const prevRes = await query(
+            'SELECT stock FROM acon_products WHERE id = $1 AND acon_brand_id = $2',
+            [Number(item.aourum_product_id), Number(acon_brand_id)]
           );
+          if (prevRes.rows.length > 0) {
+            const previousStock = Number(prevRes.rows[0].stock);
+            const newStock = Math.max(0, previousStock - Number(item.quantity));
+            const delta = -Number(item.quantity);
+
+            await query(
+              `UPDATE acon_products
+               SET stock = $1
+               WHERE id = $2 AND acon_brand_id = $3`,
+              [newStock, Number(item.aourum_product_id), Number(acon_brand_id)]
+            );
+
+            await query(
+              `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [Number(acon_brand_id), Number(item.aourum_product_id), item.product_name, 'local', previousStock, newStock, delta, created_by || 'Venta (Caja)']
+            );
+          }
         }
       }
     }
@@ -685,23 +759,44 @@ app.post('/api/internal-items', async (req, res) => {
 // ── Insumos internos: Actualizar Stock (Neon) ─────────────────────
 app.patch('/api/internal-items/:id', async (req, res) => {
   const { id } = req.params;
-  const { stock } = req.body;
+  const { stock, username } = req.body;
 
   if (stock === undefined) {
     return res.status(400).json({ error: 'stock es requerido' });
   }
 
   try {
+    const prevRes = await query(
+      'SELECT acon_brand_id, name, stock FROM acon_internal_items WHERE id = $1',
+      [id]
+    );
+    if (prevRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Insumo no encontrado' });
+    }
+    const brandId = Number(prevRes.rows[0].acon_brand_id);
+    const itemName = prevRes.rows[0].name;
+    const previousStock = Number(prevRes.rows[0].stock);
+    const newStock = Math.max(0, Number(stock));
+    const delta = newStock - previousStock;
+
     const result = await query(
       `UPDATE acon_internal_items
        SET stock = $1, updated_at = NOW()
        WHERE id = $2
        RETURNING *`,
-      [stock, id]
+      [newStock, id]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Insumo no encontrado' });
+    }
+
+    if (delta !== 0) {
+      await query(
+        `INSERT INTO acon_internal_history (acon_brand_id, internal_item_id, item_name, previous_stock, new_stock, delta, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [brandId, Number(id), itemName, previousStock, newStock, delta, username || 'Sistema']
+      );
     }
 
     return res.json(result.rows[0]);
@@ -1056,6 +1151,36 @@ app.post('/api/sections/:sectionId/products', async (req, res) => {
     await query('ROLLBACK');
     console.error('Error setting section products:', error);
     return res.status(500).json({ error: 'Error al guardar catálogo de la sección.' });
+  }
+});
+
+// Obtener historial de inventario por marca
+app.get('/api/brands/:brandId/inventory-history', async (req, res) => {
+  const { brandId } = req.params;
+  try {
+    const result = await query(
+      'SELECT * FROM acon_inventory_history WHERE acon_brand_id = $1 ORDER BY created_at DESC',
+      [brandId]
+    );
+    return res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching inventory history:', error);
+    return res.status(500).json({ error: 'Error al obtener historial de inventario.' });
+  }
+});
+
+// Obtener historial de insumos por marca
+app.get('/api/brands/:brandId/internal-history', async (req, res) => {
+  const { brandId } = req.params;
+  try {
+    const result = await query(
+      'SELECT * FROM acon_internal_history WHERE acon_brand_id = $1 ORDER BY created_at DESC',
+      [brandId]
+    );
+    return res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching internal history:', error);
+    return res.status(500).json({ error: 'Error al obtener historial de insumos.' });
   }
 });
 

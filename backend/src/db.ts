@@ -133,6 +133,31 @@ export async function initDb() {
         stock INTEGER NOT NULL DEFAULT 0,
         UNIQUE(acon_brand_id, aourum_product_id)
       );
+
+      CREATE TABLE IF NOT EXISTS acon_inventory_history (
+        id SERIAL PRIMARY KEY,
+        acon_brand_id INTEGER REFERENCES acon_brands(id) ON DELETE CASCADE,
+        product_id INTEGER NOT NULL,
+        product_name VARCHAR(255) NOT NULL,
+        product_type VARCHAR(50) NOT NULL,
+        previous_stock INTEGER NOT NULL,
+        new_stock INTEGER NOT NULL,
+        delta INTEGER NOT NULL,
+        updated_by VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS acon_internal_history (
+        id SERIAL PRIMARY KEY,
+        acon_brand_id INTEGER REFERENCES acon_brands(id) ON DELETE CASCADE,
+        internal_item_id INTEGER REFERENCES acon_internal_items(id) ON DELETE CASCADE,
+        item_name VARCHAR(255) NOT NULL,
+        previous_stock INTEGER NOT NULL,
+        new_stock INTEGER NOT NULL,
+        delta INTEGER NOT NULL,
+        updated_by VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     // Migraciones rápidas para bases de datos existentes
@@ -140,6 +165,31 @@ export async function initDb() {
       ALTER TABLE acon_brands ADD COLUMN IF NOT EXISTS sales_enabled BOOLEAN DEFAULT true;
       ALTER TABLE acon_brands ADD COLUMN IF NOT EXISTS inventory_enabled BOOLEAN DEFAULT true;
       ALTER TABLE acon_section_products ADD COLUMN IF NOT EXISTS custom_price NUMERIC(10, 2);
+      
+      CREATE TABLE IF NOT EXISTS acon_inventory_history (
+        id SERIAL PRIMARY KEY,
+        acon_brand_id INTEGER REFERENCES acon_brands(id) ON DELETE CASCADE,
+        product_id INTEGER NOT NULL,
+        product_name VARCHAR(255) NOT NULL,
+        product_type VARCHAR(50) NOT NULL,
+        previous_stock INTEGER NOT NULL,
+        new_stock INTEGER NOT NULL,
+        delta INTEGER NOT NULL,
+        updated_by VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS acon_internal_history (
+        id SERIAL PRIMARY KEY,
+        acon_brand_id INTEGER REFERENCES acon_brands(id) ON DELETE CASCADE,
+        internal_item_id INTEGER REFERENCES acon_internal_items(id) ON DELETE CASCADE,
+        item_name VARCHAR(255) NOT NULL,
+        previous_stock INTEGER NOT NULL,
+        new_stock INTEGER NOT NULL,
+        delta INTEGER NOT NULL,
+        updated_by VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     console.log('✅ Base de datos Acon inicializada correctamente.');
