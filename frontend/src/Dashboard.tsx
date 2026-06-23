@@ -172,6 +172,37 @@ export default function Dashboard() {
   const [checkoutError, setCheckoutError] = useState('');
   const [showCartMobile, setShowCartMobile] = useState(false);
 
+  // Custom Stock Modal Adjustment State
+  const [stockModal, setStockModal] = useState<{
+    isOpen: boolean;
+    itemId: number;
+    itemName: string;
+    currentStock: number;
+    itemType: 'product' | 'internal';
+    operation: 'add' | 'subtract' | 'set';
+    quantity: string;
+  }>({
+    isOpen: false,
+    itemId: 0,
+    itemName: '',
+    currentStock: 0,
+    itemType: 'product',
+    operation: 'add',
+    quantity: ''
+  });
+
+  const openStockAdjustmentModal = (itemId: number, itemName: string, currentStock: number, itemType: 'product' | 'internal') => {
+    setStockModal({
+      isOpen: true,
+      itemId,
+      itemName,
+      currentStock,
+      itemType,
+      operation: 'add',
+      quantity: ''
+    });
+  };
+
   // Initial Auth & Brand Check
   useEffect(() => {
     const user = localStorage.getItem('acon_user');
@@ -1690,8 +1721,8 @@ export default function Dashboard() {
                           <thead>
                             <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
                               <th className="px-4 py-3">Producto</th>
-                              <th className="px-4 py-3">Categoría</th>
                               <th className="px-4 py-3">Existencia</th>
+                              <th className="px-4 py-3">Categoría</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1710,35 +1741,23 @@ export default function Dashboard() {
                                   </div>
                                 </td>
                                 <td className="px-4 py-3">
-                                  <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-slate-300">
-                                    {prod.category || 'Otros'}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3">
                                   <div className="flex items-center gap-2">
                                     <span className={`font-black min-w-[20px] text-center text-sm ${(prod.stock ?? 0) < 5 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
                                       {prod.stock ?? 0}
                                     </span>
                                     <button 
-                                      onClick={() => {
-                                        const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(prod.stock ?? 0));
-                                        if (val !== null) {
-                                          const trimmed = val.trim();
-                                          let newStock = Number(trimmed);
-                                          if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
-                                            newStock = (prod.stock ?? 0) + Number(trimmed);
-                                          }
-                                          if (!isNaN(newStock)) {
-                                            handleUpdateProductStock(prod.id, newStock, 0);
-                                          }
-                                        }
-                                      }}
+                                      onClick={() => openStockAdjustmentModal(prod.id, prod.name, prod.stock ?? 0, 'product')}
                                       className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
                                       title="Modificar cantidad"
                                     >
                                       <Sliders className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-slate-300">
+                                    {prod.category || 'Otros'}
+                                  </span>
                                 </td>
                               </tr>
                             ))}
@@ -1786,19 +1805,7 @@ export default function Dashboard() {
                               </div>
 
                               <button 
-                                onClick={() => {
-                                  const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(prod.stock ?? 0));
-                                  if (val !== null) {
-                                    const trimmed = val.trim();
-                                    let newStock = Number(trimmed);
-                                    if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
-                                      newStock = (prod.stock ?? 0) + Number(trimmed);
-                                    }
-                                    if (!isNaN(newStock)) {
-                                      handleUpdateProductStock(prod.id, newStock, 0);
-                                    }
-                                  }
-                                }}
+                                onClick={() => openStockAdjustmentModal(prod.id, prod.name, prod.stock ?? 0, 'product')}
                                 className="w-8 h-8 rounded-xl bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] transition-all cursor-pointer"
                                 title="Modificar cantidad"
                               >
@@ -1893,8 +1900,8 @@ export default function Dashboard() {
                           <thead>
                             <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
                               <th className="px-4 py-3">Insumo</th>
-                              <th className="px-4 py-3">Categoría</th>
                               <th className="px-4 py-3">Existencia</th>
+                              <th className="px-4 py-3">Categoría</th>
                               <th className="px-4 py-3 text-right">Acción</th>
                             </tr>
                           </thead>
@@ -1903,35 +1910,23 @@ export default function Dashboard() {
                               <tr key={item.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
                                 <td className="px-4 py-3 font-semibold text-slate-200">{item.name}</td>
                                 <td className="px-4 py-3">
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${CATEGORY_COLORS[item.category] || CATEGORY_COLORS['Otros']}`}>
-                                    {item.category}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3">
                                   <div className="flex items-center gap-2">
                                     <span className={`font-black min-w-[20px] text-center text-sm ${item.stock < 10 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
                                       {item.stock}
                                     </span>
                                     <button 
-                                      onClick={() => {
-                                        const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(item.stock));
-                                        if (val !== null) {
-                                          const trimmed = val.trim();
-                                          let newStock = Number(trimmed);
-                                          if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
-                                            newStock = item.stock + Number(trimmed);
-                                          }
-                                          if (!isNaN(newStock)) {
-                                            handleUpdateInternalStock(item.id, newStock, 0);
-                                          }
-                                        }
-                                      }}
+                                      onClick={() => openStockAdjustmentModal(item.id, item.name, item.stock, 'internal')}
                                       className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
                                       title="Modificar cantidad"
                                     >
                                       <Sliders className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${CATEGORY_COLORS[item.category] || CATEGORY_COLORS['Otros']}`}>
+                                    {item.category}
+                                  </span>
                                 </td>
                                 <td className="px-4 py-3 text-right">
                                   <button 
@@ -1988,19 +1983,7 @@ export default function Dashboard() {
                                 </div>
 
                                 <button 
-                                  onClick={() => {
-                                    const val = window.prompt("Modificar existencia (ej: +5 para sumar, -3 para restar, o escribe el total exacto):", String(item.stock));
-                                    if (val !== null) {
-                                      const trimmed = val.trim();
-                                      let newStock = Number(trimmed);
-                                      if (trimmed.startsWith('+') || trimmed.startsWith('-')) {
-                                        newStock = item.stock + Number(trimmed);
-                                      }
-                                      if (!isNaN(newStock)) {
-                                        handleUpdateInternalStock(item.id, newStock, 0);
-                                      }
-                                    }
-                                  }}
+                                  onClick={() => openStockAdjustmentModal(item.id, item.name, item.stock, 'internal')}
                                   className="w-8 h-8 rounded-xl bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] transition-all cursor-pointer"
                                   title="Modificar cantidad"
                                 >
@@ -2133,9 +2116,9 @@ export default function Dashboard() {
                             <thead>
                               <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
                                 <th className="px-4 py-3">Nombre</th>
+                                <th className="px-4 py-3">Stock</th>
                                 <th className="px-4 py-3">Categoría</th>
                                 <th className="px-4 py-3">Precio</th>
-                                <th className="px-4 py-3">Stock</th>
                                 <th className="px-4 py-3">Descripción</th>
                               </tr>
                             </thead>
@@ -2143,13 +2126,13 @@ export default function Dashboard() {
                               {products.map((prod) => (
                                 <tr key={prod.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
                                   <td className="px-4 py-3 font-semibold text-slate-200">{prod.name}</td>
+                                  <td className="px-4 py-3 font-semibold text-white">{prod.stock ?? 0} u.</td>
                                   <td className="px-4 py-3">
                                     <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-slate-300">
                                       {prod.category || 'Otros'}
                                     </span>
                                   </td>
                                   <td className="px-4 py-3 font-bold text-violet-300">S/. {Number(prod.price).toFixed(2)}</td>
-                                  <td className="px-4 py-3 font-semibold text-white">{prod.stock ?? 0} u.</td>
                                   <td className="px-4 py-3 text-slate-500 italic max-w-[200px] truncate">{prod.description || 'Sin descripción'}</td>
                                 </tr>
                               ))}
@@ -2503,6 +2486,144 @@ export default function Dashboard() {
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Custom Stock Adjustment Modal Overlay ── */}
+      {stockModal.isOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden flex items-center justify-center p-4">
+          {/* Backdrop overlay */}
+          <div 
+            onClick={() => setStockModal(prev => ({ ...prev, isOpen: false }))}
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" 
+          />
+          
+          {/* Modal Container */}
+          <div 
+            className="relative w-full max-w-sm rounded-3xl border border-white/[0.1] bg-[#0C0F16] p-6 space-y-5 shadow-2xl z-10 animate-in fade-in zoom-in-95 duration-150"
+            style={{ boxShadow: '0 20px 50px rgba(0,0,0,0.6)' }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-white text-base">Ajustar Stock</h3>
+                <p className="text-[11px] text-slate-500 mt-1 max-w-[280px] truncate" title={stockModal.itemName}>
+                  {stockModal.itemName}
+                </p>
+              </div>
+              <button 
+                onClick={() => setStockModal(prev => ({ ...prev, isOpen: false }))}
+                className="w-7 h-7 rounded-lg bg-white/[0.05] flex items-center justify-center text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.01] flex justify-between items-center text-xs">
+              <span className="text-slate-400 font-medium">Stock actual</span>
+              <span className="font-black text-white text-sm bg-white/5 px-2.5 py-0.5 rounded-lg">
+                {stockModal.currentStock} u.
+              </span>
+            </div>
+
+            {/* Red (-) and Green (+) buttons row */}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setStockModal(prev => ({ ...prev, operation: 'subtract' }))}
+                className={`py-3.5 rounded-2xl border text-base font-bold transition-all flex items-center justify-center gap-2 cursor-pointer
+                  ${stockModal.operation === 'subtract'
+                    ? 'bg-red-500/15 text-red-400 border-red-500/40 shadow-[0_0_15px_rgba(239,68,68,0.2)]'
+                    : 'bg-white/[0.02] text-slate-400 border-white/[0.06] hover:bg-white/[0.05]'}`}
+              >
+                <Minus className="w-5 h-5" />
+                <span>Restar</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStockModal(prev => ({ ...prev, operation: 'add' }))}
+                className={`py-3.5 rounded-2xl border text-base font-bold transition-all flex items-center justify-center gap-2 cursor-pointer
+                  ${stockModal.operation === 'add'
+                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                    : 'bg-white/[0.02] text-slate-400 border-white/[0.06] hover:bg-white/[0.05]'}`}
+              >
+                <Plus className="w-5 h-5" />
+                <span>Sumar</span>
+              </button>
+            </div>
+
+            {/* Set exact total button */}
+            <button
+              type="button"
+              onClick={() => setStockModal(prev => ({ ...prev, operation: 'set' }))}
+              className={`w-full py-2.5 rounded-xl border text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer
+                ${stockModal.operation === 'set'
+                  ? 'bg-blue-500/15 text-blue-400 border-blue-500/40 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
+                  : 'bg-white/[0.01] text-slate-500 border-white/[0.04] hover:bg-white/[0.03]'}`}
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span>Establecer Stock Exacto (Total)</span>
+            </button>
+
+            {/* Input field (cantidad) */}
+            <div className="space-y-1.5">
+              <label className="block text-[9px] text-slate-500 uppercase tracking-widest font-bold">
+                {stockModal.operation === 'set' ? 'Total Exacto de Existencias' : 'Cantidad a ajustar'}
+              </label>
+              <input
+                type="number"
+                min="0"
+                placeholder={stockModal.operation === 'set' ? "Ej. 50" : "Ej. 5"}
+                value={stockModal.quantity}
+                onChange={e => setStockModal(prev => ({ ...prev, quantity: e.target.value }))}
+                className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-[#0044CC]/50 transition-colors placeholder-slate-600"
+              />
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setStockModal(prev => ({ ...prev, isOpen: false }))}
+                className="flex-1 py-3 rounded-xl border border-white/[0.08] hover:bg-white/[0.04] text-xs font-semibold text-slate-300 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              
+              <button
+                type="button"
+                onClick={async () => {
+                  const qty = Number(stockModal.quantity);
+                  if (isNaN(qty) || qty < 0 || stockModal.quantity.trim() === '') {
+                    alert('Por favor, ingresa una cantidad válida mayor o igual a 0.');
+                    return;
+                  }
+                  
+                  let finalStock = qty;
+                  if (stockModal.operation === 'add') {
+                    finalStock = stockModal.currentStock + qty;
+                  } else if (stockModal.operation === 'subtract') {
+                    finalStock = Math.max(0, stockModal.currentStock - qty);
+                  }
+                  
+                  if (stockModal.itemType === 'product') {
+                    await handleUpdateProductStock(stockModal.itemId, finalStock, 0);
+                  } else {
+                    await handleUpdateInternalStock(stockModal.itemId, finalStock, 0);
+                  }
+                  setStockModal(prev => ({ ...prev, isOpen: false }));
+                }}
+                className="flex-1 py-3 rounded-xl text-white text-xs font-bold transition-all cursor-pointer shadow-lg"
+                style={{
+                  background: brand.type === 'aourum'
+                    ? 'linear-gradient(135deg, #0044CC 0%, #2266FF 100%)'
+                    : 'linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%)',
+                }}
+              >
+                Guardar Ajuste
+              </button>
             </div>
           </div>
         </div>
