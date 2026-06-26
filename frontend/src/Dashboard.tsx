@@ -118,6 +118,7 @@ export default function Dashboard() {
   const [warehouseSubTab, setWarehouseSubTab] = useState<WarehouseSubTab>('internal');
   const [searchQuery, setSearchQuery] = useState('');
   const [configSearchQuery, setConfigSearchQuery] = useState('');
+  const [inventorySearchQuery, setInventorySearchQuery] = useState('');
 
   // Business state
   const [products, setProducts] = useState<Product[]>([]);
@@ -431,6 +432,48 @@ export default function Dashboard() {
       console.error('Error fetching internal history:', e);
     } finally {
       setLoadingInternalHistory(false);
+    }
+  };
+
+  const deleteInventoryHistoryLog = async (logId: number) => {
+    if (!brandId || !currentUser) return;
+    const confirmDelete = window.confirm('¿Estás seguro de que deseas eliminar este registro del historial? Esta acción no se puede deshacer.');
+    if (!confirmDelete) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/brands/${brandId}/inventory-history/${logId}?owner_username=${encodeURIComponent(currentUser)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        fetchInventoryHistory(brandId);
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Error al eliminar el registro del historial.');
+      }
+    } catch (e) {
+      console.error('Error deleting inventory history log:', e);
+      alert('Error de conexión al eliminar el registro.');
+    }
+  };
+
+  const deleteInternalHistoryLog = async (logId: number) => {
+    if (!brandId || !currentUser) return;
+    const confirmDelete = window.confirm('¿Estás seguro de que deseas eliminar este registro del historial de insumos? Esta acción no se puede deshacer.');
+    if (!confirmDelete) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/brands/${brandId}/internal-history/${logId}?owner_username=${encodeURIComponent(currentUser)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        fetchInternalHistory(brandId);
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Error al eliminar el registro del historial de insumos.');
+      }
+    } catch (e) {
+      console.error('Error deleting internal history log:', e);
+      alert('Error de conexión al eliminar el registro.');
     }
   };
 
@@ -1798,7 +1841,7 @@ export default function Dashboard() {
 
                     <div className="flex bg-black/30 border border-white/[0.08] p-0.5 rounded-xl self-start sm:self-auto shrink-0">
                       <button
-                        onClick={() => setInventorySubTab('list')}
+                        onClick={() => { setInventorySubTab('list'); setInventorySearchQuery(''); }}
                         className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer
                           ${inventorySubTab === 'list' 
                             ? brand.type === 'aourum'
@@ -1809,7 +1852,7 @@ export default function Dashboard() {
                         Existencias
                       </button>
                       <button
-                        onClick={() => setInventorySubTab('history')}
+                        onClick={() => { setInventorySubTab('history'); setInventorySearchQuery(''); }}
                         className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer
                           ${inventorySubTab === 'history' 
                             ? brand.type === 'aourum'
@@ -1848,6 +1891,7 @@ export default function Dashboard() {
                                   <th className="px-4 py-3">Stock Previo</th>
                                   <th className="px-4 py-3">Stock Nuevo</th>
                                   <th className="px-4 py-3">Responsable</th>
+                                  {brand?.role === 'owner' && <th className="px-4 py-3 text-right">Acciones</th>}
                                 </tr>
                               </thead>
                               <tbody>
@@ -1874,6 +1918,17 @@ export default function Dashboard() {
                                           {log.updated_by}
                                         </span>
                                       </td>
+                                      {brand?.role === 'owner' && (
+                                        <td className="px-4 py-3 text-right">
+                                          <button
+                                            onClick={() => deleteInventoryHistoryLog(log.id)}
+                                            className="p-1 rounded-lg hover:bg-red-500/10 text-slate-500 hover:text-red-400 transition-all cursor-pointer"
+                                            title="Eliminar del historial"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </td>
+                                      )}
                                     </tr>
                                   );
                                 })}
@@ -1893,13 +1948,24 @@ export default function Dashboard() {
                                       <h4 className="font-bold text-xs text-white">{log.product_name}</h4>
                                       <p className="text-[9px] text-slate-500 mt-0.5">{dateStr}</p>
                                     </div>
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold shadow-sm
-                                      ${isPositive 
-                                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
-                                        : 'bg-red-500/15 text-red-400 border border-red-500/20'}`}
-                                    >
-                                      {isPositive ? `+${log.delta}` : log.delta}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold shadow-sm
+                                        ${isPositive 
+                                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
+                                          : 'bg-red-500/15 text-red-400 border border-red-500/20'}`}
+                                      >
+                                        {isPositive ? `+${log.delta}` : log.delta}
+                                      </span>
+                                      {brand?.role === 'owner' && (
+                                        <button
+                                          onClick={() => deleteInventoryHistoryLog(log.id)}
+                                          className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/25 border border-red-500/20 hover:border-red-500/30 text-red-400 transition-all cursor-pointer"
+                                          title="Eliminar"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                   <div className="flex items-center justify-between text-[10px] border-t border-white/[0.03] pt-2.5">
                                     <span className="text-slate-500">Stock: <strong className="text-slate-300">{log.previous_stock} u.</strong> → <strong className="text-white">{log.new_stock} u.</strong></span>
@@ -1914,123 +1980,166 @@ export default function Dashboard() {
                         </>
                       )}
                     </div>
-                  ) : loadingProducts ? (
-                    <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
-                      <Loader2 className="w-6 h-6 animate-spin text-[#2266FF]" />
-                      <p className="text-xs">Cargando catálogo...</p>
-                    </div>
-                  ) : products.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-white/10 p-12 text-center bg-white/[0.01]">
-                      <Package className="w-8 h-8 text-slate-800 mx-auto mb-2" />
-                      <p className="text-slate-400 text-xs font-medium">Sin productos registrados en el catálogo</p>
-                      <p className="text-[10px] text-slate-600 mt-1">Crea productos en "Gestión de Productos" o vincula una marca con catálogo.</p>
-                    </div>
                   ) : (
-                    <>
-                      {/* Desktop View Table */}
-                      <div className="hidden md:block rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
-                        <table className="w-full text-left border-collapse text-xs min-w-[500px]">
-                          <thead>
-                            <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
-                              <th className="px-4 py-3">Producto</th>
-                              <th className="px-4 py-3">Existencia</th>
-                              <th className="px-4 py-3">Categoría</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {products.map((prod) => (
-                              <tr key={prod.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
-                                <td className="px-4 py-3 font-semibold text-slate-200">
-                                  <div className="flex items-center gap-2.5">
+                    <div className="space-y-4">
+                      {/* Buscador de existencias */}
+                      {!loadingProducts && products.length > 0 && (
+                        <div className="relative flex items-center max-w-md">
+                          <Search className="absolute left-3 w-4 h-4 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Buscar producto por nombre o categoría..."
+                            value={inventorySearchQuery}
+                            onChange={(e) => setInventorySearchQuery(e.target.value)}
+                            className="w-full pl-9 pr-8 py-2 text-xs text-white bg-white/[0.03] hover:bg-white/[0.05] focus:bg-white/[0.05] border border-white/[0.08] focus:border-[#6699FF]/50 rounded-xl outline-none transition-all placeholder:text-slate-500"
+                          />
+                          {inventorySearchQuery && (
+                            <button
+                              onClick={() => setInventorySearchQuery('')}
+                              className="absolute right-2.5 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer text-[10px] font-bold"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {loadingProducts ? (
+                        <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
+                          <Loader2 className="w-6 h-6 animate-spin text-[#2266FF]" />
+                          <p className="text-xs">Cargando catálogo...</p>
+                        </div>
+                      ) : products.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-white/10 p-12 text-center bg-white/[0.01]">
+                          <Package className="w-8 h-8 text-slate-800 mx-auto mb-2" />
+                          <p className="text-slate-400 text-xs font-medium">Sin productos registrados en el catálogo</p>
+                          <p className="text-[10px] text-slate-600 mt-1">Crea productos en "Gestión de Productos" o vincula una marca con catálogo.</p>
+                        </div>
+                      ) : (() => {
+                        const filteredProducts = products.filter(prod => 
+                          prod.name.toLowerCase().includes(inventorySearchQuery.toLowerCase()) ||
+                          (prod.category && prod.category.toLowerCase().includes(inventorySearchQuery.toLowerCase()))
+                        );
+
+                        if (filteredProducts.length === 0) {
+                          return (
+                            <div className="rounded-xl border border-dashed border-white/10 p-12 text-center bg-white/[0.01]">
+                              <Search className="w-8 h-8 text-slate-800 mx-auto mb-2 animate-pulse" />
+                              <p className="text-slate-400 text-xs font-medium">Sin resultados para "{inventorySearchQuery}"</p>
+                              <p className="text-[10px] text-slate-600 mt-1">Intenta con otro término de búsqueda o categoría.</p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <>
+                            {/* Desktop View Table */}
+                            <div className="hidden md:block rounded-xl border border-white/[0.06] overflow-x-auto bg-black/25">
+                              <table className="w-full text-left border-collapse text-xs min-w-[500px]">
+                                <thead>
+                                  <tr className="border-b border-white/[0.06] text-[9px] text-slate-500 uppercase tracking-widest font-bold bg-white/[0.02]">
+                                    <th className="px-4 py-3">Producto</th>
+                                    <th className="px-4 py-3">Existencia</th>
+                                    <th className="px-4 py-3">Categoría</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {filteredProducts.map((prod) => (
+                                    <tr key={prod.id} className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
+                                      <td className="px-4 py-3 font-semibold text-slate-200">
+                                        <div className="flex items-center gap-2.5">
+                                          {prod.image ? (
+                                            <img src={prod.image} alt="" className="w-6.5 h-6.5 rounded object-cover ring-1 ring-white/10 shrink-0" />
+                                          ) : (
+                                            <div className="w-6.5 h-6.5 rounded bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[10px] font-bold text-[#6699FF] shrink-0">
+                                              {prod.name[0]}
+                                            </div>
+                                          )}
+                                          <span>{prod.name}</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <div className="flex items-center gap-2">
+                                          <span className={`font-black min-w-[20px] text-center text-sm ${(prod.stock ?? 0) < 5 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
+                                            {prod.stock ?? 0}
+                                          </span>
+                                          <button 
+                                            onClick={() => openStockAdjustmentModal(prod.id, prod.name, prod.stock ?? 0, 'product')}
+                                            className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
+                                            title="Modificar cantidad"
+                                          >
+                                            <Sliders className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-slate-300">
+                                          {prod.category || 'Otros'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Mobile Card-based View */}
+                            <div className="block md:hidden space-y-3">
+                              {filteredProducts.map((prod) => (
+                                <div key={prod.id} className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.015] flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-3 min-w-0">
                                     {prod.image ? (
-                                      <img src={prod.image} alt="" className="w-6.5 h-6.5 rounded object-cover ring-1 ring-white/10 shrink-0" />
+                                      <img src={prod.image} alt="" className="w-10 h-10 rounded-lg object-cover ring-1 ring-white/10 shrink-0" />
                                     ) : (
-                                      <div className="w-6.5 h-6.5 rounded bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[10px] font-bold text-[#6699FF] shrink-0">
+                                      <div className="w-10 h-10 rounded-lg bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-xs font-bold text-[#6699FF] shrink-0">
                                         {prod.name[0]}
                                       </div>
                                     )}
-                                    <span>{prod.name}</span>
+                                    <div className="min-w-0">
+                                      <p className="font-bold text-xs text-white truncate">{prod.name}</p>
+                                      <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.06] text-[9px] text-slate-400">
+                                        {prod.category || 'Otros'}
+                                      </span>
+                                    </div>
                                   </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex items-center gap-2">
-                                    <span className={`font-black min-w-[20px] text-center text-sm ${(prod.stock ?? 0) < 5 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
-                                      {prod.stock ?? 0}
-                                    </span>
+
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <div className="flex bg-black/30 border border-white/[0.05] p-0.5 rounded-lg items-center shrink-0">
+                                      <button
+                                        onClick={() => handleUpdateProductStock(prod.id, Math.max(0, (prod.stock ?? 0) - 1), 0)}
+                                        className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-red-400 transition-all cursor-pointer"
+                                      >
+                                        <Minus className="w-3 h-3" />
+                                      </button>
+                                      <span className={`w-8 text-center text-xs font-black ${(prod.stock ?? 0) < 5 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
+                                        {prod.stock ?? 0}
+                                      </span>
+                                      <button
+                                        onClick={() => handleUpdateProductStock(prod.id, (prod.stock ?? 0) + 1, 0)}
+                                        className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-emerald-400 transition-all cursor-pointer"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </button>
+                                    </div>
+
                                     <button 
                                       onClick={() => openStockAdjustmentModal(prod.id, prod.name, prod.stock ?? 0, 'product')}
-                                      className="w-6.5 h-6.5 rounded-lg bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] hover:text-white transition-all cursor-pointer"
+                                      className="w-8 h-8 rounded-xl bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] transition-all cursor-pointer"
                                       title="Modificar cantidad"
                                     >
                                       <Sliders className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.07] text-[10px] text-slate-300">
-                                    {prod.category || 'Otros'}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Mobile Card-based View */}
-                      <div className="block md:hidden space-y-3">
-                        {products.map((prod) => (
-                          <div key={prod.id} className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.015] flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              {prod.image ? (
-                                <img src={prod.image} alt="" className="w-10 h-10 rounded-lg object-cover ring-1 ring-white/10 shrink-0" />
-                              ) : (
-                                <div className="w-10 h-10 rounded-lg bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-xs font-bold text-[#6699FF] shrink-0">
-                                  {prod.name[0]}
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <p className="font-bold text-xs text-white truncate">{prod.name}</p>
-                                <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.06] text-[9px] text-slate-400">
-                                  {prod.category || 'Otros'}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <div className="flex items-center bg-black/40 border border-white/[0.08] rounded-xl p-0.5 gap-0.5 shadow-inner">
-                                <button
-                                  onClick={() => handleUpdateProductStock(prod.id, Math.max(0, (prod.stock ?? 0) - 1), 0)}
-                                  className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-red-400 transition-all cursor-pointer"
-                                >
-                                  <Minus className="w-3 h-3" />
-                                </button>
-                                <span className={`w-8 text-center text-xs font-black ${(prod.stock ?? 0) < 5 ? 'text-amber-400 animate-pulse' : 'text-white'}`}>
-                                  {prod.stock ?? 0}
-                                </span>
-                                <button
-                                  onClick={() => handleUpdateProductStock(prod.id, (prod.stock ?? 0) + 1, 0)}
-                                  className="w-7 h-7 rounded-lg bg-white/[0.03] active:bg-white/[0.08] flex items-center justify-center text-slate-400 active:text-emerald-400 transition-all cursor-pointer"
-                                >
-                                  <Plus className="w-3 h-3" />
-                                </button>
-                              </div>
-
-                              <button 
-                                onClick={() => openStockAdjustmentModal(prod.id, prod.name, prod.stock ?? 0, 'product')}
-                                className="w-8 h-8 rounded-xl bg-[#0044CC]/20 hover:bg-[#0044CC]/30 border border-[#0044CC]/40 flex items-center justify-center text-[#6699FF] transition-all cursor-pointer"
-                                title="Modificar cantidad"
-                              >
-                                <Sliders className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
                           </div>
                         ))}
                       </div>
                     </>
-                  )}
-                </div>
-              )}
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        )}
 
               {/* Subview 1: Insumos Internos */}
               {warehouseSubTab === 'internal' && (
@@ -2096,6 +2205,7 @@ export default function Dashboard() {
                                   <th className="px-4 py-3">Stock Previo</th>
                                   <th className="px-4 py-3">Stock Nuevo</th>
                                   <th className="px-4 py-3">Responsable</th>
+                                  {brand?.role === 'owner' && <th className="px-4 py-3 text-right">Acciones</th>}
                                 </tr>
                               </thead>
                               <tbody>
@@ -2122,6 +2232,17 @@ export default function Dashboard() {
                                           {log.updated_by}
                                         </span>
                                       </td>
+                                      {brand?.role === 'owner' && (
+                                        <td className="px-4 py-3 text-right">
+                                          <button
+                                            onClick={() => deleteInternalHistoryLog(log.id)}
+                                            className="p-1 rounded-lg hover:bg-red-500/10 text-slate-500 hover:text-red-400 transition-all cursor-pointer"
+                                            title="Eliminar del historial"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </td>
+                                      )}
                                     </tr>
                                   );
                                 })}
@@ -2141,13 +2262,24 @@ export default function Dashboard() {
                                       <h4 className="font-bold text-xs text-white">{log.item_name}</h4>
                                       <p className="text-[9px] text-slate-500 mt-0.5">{dateStr}</p>
                                     </div>
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold shadow-sm
-                                      ${isPositive 
-                                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
-                                        : 'bg-red-500/15 text-red-400 border border-red-500/20'}`}
-                                    >
-                                      {isPositive ? `+${log.delta}` : log.delta}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold shadow-sm
+                                        ${isPositive 
+                                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
+                                          : 'bg-red-500/15 text-red-400 border border-red-500/20'}`}
+                                      >
+                                        {isPositive ? `+${log.delta}` : log.delta}
+                                      </span>
+                                      {brand?.role === 'owner' && (
+                                        <button
+                                          onClick={() => deleteInternalHistoryLog(log.id)}
+                                          className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/25 border border-red-500/20 hover:border-red-500/30 text-red-400 transition-all cursor-pointer"
+                                          title="Eliminar"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                   <div className="flex items-center justify-between text-[10px] border-t border-white/[0.03] pt-2.5">
                                     <span className="text-slate-500">Stock: <strong className="text-slate-300">{log.previous_stock}</strong> → <strong className="text-white">{log.new_stock}</strong></span>

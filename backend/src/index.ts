@@ -1184,6 +1184,70 @@ app.get('/api/brands/:brandId/internal-history', async (req, res) => {
   }
 });
 
+// Eliminar un registro de historial de inventario (Owner only)
+app.delete('/api/brands/:brandId/inventory-history/:historyId', async (req, res) => {
+  const { brandId, historyId } = req.params;
+  const { owner_username } = req.query;
+
+  if (!owner_username) {
+    return res.status(400).json({ error: 'owner_username es requerido' });
+  }
+
+  try {
+    // 1. Verificar que el solicitante sea el propietario de la marca
+    const ownerRes = await query('SELECT owner_username FROM acon_brands WHERE id = $1', [brandId]);
+    if (ownerRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Marca no encontrada.' });
+    }
+    if (ownerRes.rows[0].owner_username !== owner_username) {
+      return res.status(403).json({ error: 'Solo el propietario de la marca puede eliminar del historial.' });
+    }
+
+    // 2. Eliminar de la tabla acon_inventory_history
+    await query(
+      'DELETE FROM acon_inventory_history WHERE id = $1 AND acon_brand_id = $2',
+      [historyId, brandId]
+    );
+    
+    return res.json({ success: true, message: 'Registro de historial de inventario eliminado.' });
+  } catch (error) {
+    console.error('Error deleting inventory history log:', error);
+    return res.status(500).json({ error: 'Error al eliminar registro del historial.' });
+  }
+});
+
+// Eliminar un registro de historial de insumos/interno (Owner only)
+app.delete('/api/brands/:brandId/internal-history/:historyId', async (req, res) => {
+  const { brandId, historyId } = req.params;
+  const { owner_username } = req.query;
+
+  if (!owner_username) {
+    return res.status(400).json({ error: 'owner_username es requerido' });
+  }
+
+  try {
+    // 1. Verificar que el solicitante sea el propietario de la marca
+    const ownerRes = await query('SELECT owner_username FROM acon_brands WHERE id = $1', [brandId]);
+    if (ownerRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Marca no encontrada.' });
+    }
+    if (ownerRes.rows[0].owner_username !== owner_username) {
+      return res.status(403).json({ error: 'Solo el propietario de la marca puede eliminar del historial.' });
+    }
+
+    // 2. Eliminar de la tabla acon_internal_history
+    await query(
+      'DELETE FROM acon_internal_history WHERE id = $1 AND acon_brand_id = $2',
+      [historyId, brandId]
+    );
+    
+    return res.json({ success: true, message: 'Registro de historial de insumos eliminado.' });
+  } catch (error) {
+    console.error('Error deleting internal history log:', error);
+    return res.status(500).json({ error: 'Error al eliminar registro del historial de insumos.' });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────
 initDb().then(() => {
   app.listen(PORT, () => {
