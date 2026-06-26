@@ -594,52 +594,76 @@ app.post('/api/sales', async (req, res) => {
       );
 
       if (item.aourum_product_id) {
-        if (isAourum) {
-          // Caso Aourum: Obtener stock anterior, calcular nuevo, actualizar y registrar historial
-          const prevRes = await query(
-            'SELECT stock FROM acon_aourum_product_stocks WHERE acon_brand_id = $1 AND aourum_product_id = $2',
-            [Number(acon_brand_id), Number(item.aourum_product_id)]
+        if (section_id) {
+          // Descontar del stock asignado a la feria (sección)
+          // 1. Validar si hay stock suficiente en la feria
+          const secStockRes = await query(
+            'SELECT stock FROM acon_section_products WHERE section_id = $1 AND product_id = $2',
+            [Number(section_id), Number(item.aourum_product_id)]
           );
-          const previousStock = prevRes.rows.length > 0 ? Number(prevRes.rows[0].stock) : 0;
-          const newStock = Math.max(0, previousStock - Number(item.quantity));
-          const delta = -Number(item.quantity);
+          const currentSecStock = secStockRes.rows.length > 0 ? Number(secStockRes.rows[0].stock) : 0;
+          
+          if (currentSecStock < Number(item.quantity)) {
+            await query('ROLLBACK');
+            return res.status(400).json({
+              error: `Stock insuficiente en la feria para "${item.product_name}". Disponible: ${currentSecStock} u., Requerido: ${item.quantity} u.`
+            });
+          }
 
+          // 2. Decrementar el stock de la feria
           await query(
-            `INSERT INTO acon_aourum_product_stocks (acon_brand_id, aourum_product_id, stock)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (acon_brand_id, aourum_product_id)
-             DO UPDATE SET stock = $3`,
-            [Number(acon_brand_id), Number(item.aourum_product_id), newStock]
-          );
-
-          await query(
-            `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-            [Number(acon_brand_id), Number(item.aourum_product_id), item.product_name, 'aourum', previousStock, newStock, delta, created_by || 'Venta (Caja)']
+            'UPDATE acon_section_products SET stock = GREATEST(0, stock - $1) WHERE section_id = $2 AND product_id = $3',
+            [Number(item.quantity), Number(section_id), Number(item.aourum_product_id)]
           );
         } else {
-          // Caso Local: Obtener stock anterior, calcular nuevo, actualizar y registrar historial
-          const prevRes = await query(
-            'SELECT stock FROM acon_products WHERE id = $1 AND acon_brand_id = $2',
-            [Number(item.aourum_product_id), Number(acon_brand_id)]
-          );
-          if (prevRes.rows.length > 0) {
-            const previousStock = Number(prevRes.rows[0].stock);
+          // Venta normal: descontar del almacén principal (Aourum o Local)
+          if (isAourum) {
+            // Caso Aourum: Obtener stock anterior, calcular nuevo, actualizar y registrar historial
+            const prevRes = await query(
+              'SELECT stock FROM acon_aourum_product_stocks WHERE acon_brand_id = $1 AND aourum_product_id = $2',
+              [Number(acon_brand_id), Number(item.aourum_product_id)]
+            );
+            const previousStock = prevRes.rows.length > 0 ? Number(prevRes.rows[0].stock) : 0;
             const newStock = Math.max(0, previousStock - Number(item.quantity));
             const delta = -Number(item.quantity);
 
             await query(
-              `UPDATE acon_products
-               SET stock = $1
-               WHERE id = $2 AND acon_brand_id = $3`,
-              [newStock, Number(item.aourum_product_id), Number(acon_brand_id)]
+              `INSERT INTO acon_aourum_product_stocks (acon_brand_id, aourum_product_id, stock)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (acon_brand_id, aourum_product_id)
+               DO UPDATE SET stock = $3`,
+              [Number(acon_brand_id), Number(item.aourum_product_id), newStock]
             );
 
             await query(
               `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-              [Number(acon_brand_id), Number(item.aourum_product_id), item.product_name, 'local', previousStock, newStock, delta, created_by || 'Venta (Caja)']
+              [Number(acon_brand_id), Number(item.aourum_product_id), item.product_name, 'aourum', previousStock, newStock, delta, created_by || 'Venta (Caja)']
             );
+          } else {
+            // Caso Local: Obtener stock anterior, calcular nuevo, actualizar y registrar historial
+            const prevRes = await query(
+              'SELECT stock FROM acon_products WHERE id = $1 AND acon_brand_id = $2',
+              [Number(item.aourum_product_id), Number(acon_brand_id)]
+            );
+            if (prevRes.rows.length > 0) {
+              const previousStock = Number(prevRes.rows[0].stock);
+              const newStock = Math.max(0, previousStock - Number(item.quantity));
+              const delta = -Number(item.quantity);
+
+              await query(
+                `UPDATE acon_products
+                 SET stock = $1
+                 WHERE id = $2 AND acon_brand_id = $3`,
+                [newStock, Number(item.aourum_product_id), Number(acon_brand_id)]
+              );
+
+              await query(
+                `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [Number(acon_brand_id), Number(item.aourum_product_id), item.product_name, 'local', previousStock, newStock, delta, created_by || 'Venta (Caja)']
+              );
+            }
           }
         }
       }
@@ -1017,18 +1041,109 @@ app.post('/api/brands/:id/sections', async (req, res) => {
 // Eliminar sección
 app.delete('/api/sections/:id', async (req, res) => {
   const { id } = req.params;
+  const { username } = req.query;
+
   try {
-    const result = await query(
-      'DELETE FROM acon_sections WHERE id = $1 RETURNING *',
+    await query('BEGIN');
+
+    // 1. Obtener la marca a la que pertenece la sección y su nombre
+    const sectionRes = await query(
+      'SELECT acon_brand_id, name FROM acon_sections WHERE id = $1',
       [id]
     );
-    if (result.rows.length === 0) {
+    if (sectionRes.rows.length === 0) {
+      await query('ROLLBACK');
       return res.status(404).json({ error: 'Sección no encontrada.' });
     }
-    return res.json({ message: 'Sección eliminada con éxito.' });
+    const brandId = sectionRes.rows[0].acon_brand_id;
+    const sectionName = sectionRes.rows[0].name;
+
+    // 2. Obtener la marca para saber el tipo (Aourum o Local)
+    const brandRes = await query('SELECT aourum_brand_id FROM acon_brands WHERE id = $1', [brandId]);
+    const isAourum = brandRes.rows[0].aourum_brand_id !== null;
+
+    // 3. Obtener todos los productos asignados a la sección con su stock restante
+    const productsRes = await query(
+      'SELECT product_id, stock FROM acon_section_products WHERE section_id = $1',
+      [id]
+    );
+
+    // 4. Devolver el stock de cada producto al almacén
+    for (const item of productsRes.rows) {
+      const prodId = Number(item.product_id);
+      const remainingStock = Number(item.stock);
+
+      if (remainingStock > 0) {
+        let prevWarehouseStock = 0;
+        let productName = `Producto #${prodId}`;
+
+        if (isAourum) {
+          const whRes = await query(
+            'SELECT stock FROM acon_aourum_product_stocks WHERE acon_brand_id = $1 AND aourum_product_id = $2',
+            [brandId, prodId]
+          );
+          prevWarehouseStock = whRes.rows.length > 0 ? Number(whRes.rows[0].stock) : 0;
+
+          // Devolver al almacén
+          await query(
+            `INSERT INTO acon_aourum_product_stocks (acon_brand_id, aourum_product_id, stock)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (acon_brand_id, aourum_product_id)
+             DO UPDATE SET stock = acon_aourum_product_stocks.stock + EXCLUDED.stock`,
+            [brandId, prodId, remainingStock]
+          );
+
+          // Obtener nombre de Supabase
+          const { data } = await aourumSupabase
+            .from('products')
+            .select('name')
+            .eq('id', prodId)
+            .single();
+          if (data) productName = data.name;
+        } else {
+          const whRes = await query(
+            'SELECT name, stock FROM acon_products WHERE id = $1 AND acon_brand_id = $2',
+            [prodId, brandId]
+          );
+          if (whRes.rows.length > 0) {
+            prevWarehouseStock = Number(whRes.rows[0].stock);
+            productName = whRes.rows[0].name;
+          }
+
+          // Devolver al almacén
+          await query(
+            'UPDATE acon_products SET stock = stock + $1 WHERE id = $2 AND acon_brand_id = $3',
+            [remainingStock, prodId, brandId]
+          );
+        }
+
+        // Registrar en historial de inventario
+        await query(
+          `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            brandId,
+            prodId,
+            productName,
+            isAourum ? 'aourum' : 'local',
+            prevWarehouseStock,
+            prevWarehouseStock + remainingStock,
+            remainingStock,
+            `${username || 'Sistema'} (Fin de Feria: ${sectionName})`
+          ]
+        );
+      }
+    }
+
+    // 5. Eliminar la sección
+    await query('DELETE FROM acon_sections WHERE id = $1', [id]);
+
+    await query('COMMIT');
+    return res.json({ success: true, message: 'Feria finalizada con éxito y stock devuelto al almacén.' });
   } catch (error) {
-    console.error('Error deleting section:', error);
-    return res.status(500).json({ error: 'Error al eliminar la sección.' });
+    await query('ROLLBACK');
+    console.error('Error ending section:', error);
+    return res.status(500).json({ error: 'Error al finalizar la feria y devolver el stock.' });
   }
 });
 
@@ -1047,10 +1162,13 @@ app.get('/api/sections/:sectionId/products', async (req, res) => {
     
     // Obtener los product_ids asignados a la sección con precios personalizados
     const assignedRes = await query(
-      'SELECT product_id, custom_price FROM acon_section_products WHERE section_id = $1',
+      'SELECT product_id, custom_price, stock FROM acon_section_products WHERE section_id = $1',
       [sectionId]
     );
-    const assignedMap = new Map(assignedRes.rows.map(r => [Number(r.product_id), r.custom_price]));
+    const assignedMap = new Map(assignedRes.rows.map(r => [
+      Number(r.product_id), 
+      { custom_price: r.custom_price, stock: Number(r.stock) }
+    ]));
     const assignedIds = new Set(assignedRes.rows.map(r => Number(r.product_id)));
 
     // Obtener la información de marca para saber el tipo (local o Aourum)
@@ -1088,11 +1206,14 @@ app.get('/api/sections/:sectionId/products', async (req, res) => {
     const activeProducts = allProducts
       .filter(p => assignedIds.has(Number(p.id)))
       .map(p => {
-        const customPrice = assignedMap.get(Number(p.id));
+        const assigned = assignedMap.get(Number(p.id));
+        const customPrice = assigned ? assigned.custom_price : null;
+        const sectionStock = assigned ? assigned.stock : 0;
         const basePrice = (p.price_aourum !== null && p.price_aourum !== undefined) ? Number(p.price_aourum) : Number(p.price);
         return {
           ...p,
-          price: customPrice !== null && customPrice !== undefined ? Number(customPrice) : basePrice
+          price: customPrice !== null && customPrice !== undefined ? Number(customPrice) : basePrice,
+          section_stock: sectionStock
         };
       });
     
@@ -1101,7 +1222,8 @@ app.get('/api/sections/:sectionId/products', async (req, res) => {
       allIds: Array.from(assignedIds),
       customPrices: assignedRes.rows.map(r => ({
         product_id: Number(r.product_id),
-        custom_price: r.custom_price !== null ? Number(r.custom_price) : null
+        custom_price: r.custom_price !== null ? Number(r.custom_price) : null,
+        stock: Number(r.stock)
       }))
     });
   } catch (error) {
@@ -1113,35 +1235,254 @@ app.get('/api/sections/:sectionId/products', async (req, res) => {
 // Guardar catálogo seleccionado para la sección
 app.post('/api/sections/:sectionId/products', async (req, res) => {
   const { sectionId } = req.params;
-  const { productIds, products } = req.body;
+  const { products, username } = req.body;
 
-  let itemsToInsert: { id: number; custom_price: number | null }[] = [];
-
-  if (Array.isArray(products)) {
-    itemsToInsert = products.map(p => ({
-      id: Number(p.id),
-      custom_price: p.custom_price !== undefined && p.custom_price !== null ? Number(p.custom_price) : null
-    }));
-  } else if (Array.isArray(productIds)) {
-    itemsToInsert = productIds.map(id => ({
-      id: Number(id),
-      custom_price: null
-    }));
-  } else {
-    return res.status(400).json({ error: 'Debes proporcionar productIds o products.' });
+  if (!Array.isArray(products)) {
+    return res.status(400).json({ error: 'Debes proporcionar la lista de productos.' });
   }
+
+  const itemsToInsert = products.map(p => ({
+    id: Number(p.id),
+    custom_price: p.custom_price !== undefined && p.custom_price !== null ? Number(p.custom_price) : null,
+    stock: p.stock !== undefined && p.stock !== null ? Math.max(0, Number(p.stock)) : 0
+  }));
 
   try {
     await query('BEGIN');
-    
-    // Limpiar catálogo previo de la sección
+
+    // 1. Obtener la marca a la que pertenece la sección y su tipo
+    const sectionRes = await query(
+      'SELECT acon_brand_id, name FROM acon_sections WHERE id = $1',
+      [sectionId]
+    );
+    if (sectionRes.rows.length === 0) {
+      await query('ROLLBACK');
+      return res.status(404).json({ error: 'Sección no encontrada' });
+    }
+    const brandId = sectionRes.rows[0].acon_brand_id;
+    const sectionName = sectionRes.rows[0].name;
+
+    const brandRes = await query('SELECT aourum_brand_id FROM acon_brands WHERE id = $1', [brandId]);
+    const isAourum = brandRes.rows[0].aourum_brand_id !== null;
+
+    // 2. Obtener el catálogo asignado actualmente para calcular diferencias de stock
+    const existingRes = await query(
+      'SELECT product_id, stock FROM acon_section_products WHERE section_id = $1',
+      [sectionId]
+    );
+    const existingStocks = new Map<number, number>(
+      existingRes.rows.map(r => [Number(r.product_id), Number(r.stock)])
+    );
+
+    // 3. Validar stock en almacén para los incrementos
+    for (const item of itemsToInsert) {
+      const oldStock = existingStocks.get(item.id) || 0;
+      const diff = item.stock - oldStock;
+
+      if (diff > 0) {
+        let availableStock = 0;
+        let productName = `Producto #${item.id}`;
+
+        if (isAourum) {
+          const whRes = await query(
+            'SELECT stock FROM acon_aourum_product_stocks WHERE acon_brand_id = $1 AND aourum_product_id = $2',
+            [brandId, item.id]
+          );
+          availableStock = whRes.rows.length > 0 ? Number(whRes.rows[0].stock) : 0;
+          
+          const { data } = await aourumSupabase
+            .from('products')
+            .select('name')
+            .eq('id', item.id)
+            .single();
+          if (data) productName = data.name;
+        } else {
+          const whRes = await query(
+            'SELECT name, stock FROM acon_products WHERE id = $1 AND acon_brand_id = $2',
+            [item.id, brandId]
+          );
+          if (whRes.rows.length > 0) {
+            availableStock = Number(whRes.rows[0].stock);
+            productName = whRes.rows[0].name;
+          }
+        }
+
+        if (availableStock < diff) {
+          await query('ROLLBACK');
+          return res.status(400).json({
+            error: `Stock insuficiente en almacén para "${productName}". Disponible: ${availableStock} u., Requerido adicional: ${diff} u.`
+          });
+        }
+      }
+    }
+
+    // 4. Realizar las modificaciones en el stock de almacén y registrar en historial
+    const processedIds = new Set<number>();
+
+    for (const item of itemsToInsert) {
+      processedIds.add(item.id);
+      const oldStock = existingStocks.get(item.id) || 0;
+      const diff = item.stock - oldStock;
+
+      if (diff !== 0) {
+        let prevWarehouseStock = 0;
+        let productName = `Producto #${item.id}`;
+
+        if (isAourum) {
+          const whRes = await query(
+            'SELECT stock FROM acon_aourum_product_stocks WHERE acon_brand_id = $1 AND aourum_product_id = $2',
+            [brandId, item.id]
+          );
+          prevWarehouseStock = whRes.rows.length > 0 ? Number(whRes.rows[0].stock) : 0;
+          const newWhStock = Math.max(0, prevWarehouseStock - diff);
+
+          await query(
+            `INSERT INTO acon_aourum_product_stocks (acon_brand_id, aourum_product_id, stock)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (acon_brand_id, aourum_product_id)
+             DO UPDATE SET stock = $3`,
+            [brandId, item.id, newWhStock]
+          );
+
+          const { data } = await aourumSupabase
+            .from('products')
+            .select('name')
+            .eq('id', item.id)
+            .single();
+          if (data) productName = data.name;
+
+          await query(
+            `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              brandId,
+              item.id,
+              productName,
+              'aourum',
+              prevWarehouseStock,
+              newWhStock,
+              -diff,
+              `${username || 'Sistema'} (${diff > 0 ? 'Asignación' : 'Retorno'} Feria: ${sectionName})`
+            ]
+          );
+        } else {
+          const whRes = await query(
+            'SELECT name, stock FROM acon_products WHERE id = $1 AND acon_brand_id = $2',
+            [item.id, brandId]
+          );
+          if (whRes.rows.length > 0) {
+            prevWarehouseStock = Number(whRes.rows[0].stock);
+            productName = whRes.rows[0].name;
+          }
+          const newWhStock = Math.max(0, prevWarehouseStock - diff);
+
+          await query(
+            'UPDATE acon_products SET stock = $1 WHERE id = $2 AND acon_brand_id = $3',
+            [newWhStock, item.id, brandId]
+          );
+
+          await query(
+            `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              brandId,
+              item.id,
+              productName,
+              'local',
+              prevWarehouseStock,
+              newWhStock,
+              -diff,
+              `${username || 'Sistema'} (${diff > 0 ? 'Asignación' : 'Retorno'} Feria: ${sectionName})`
+            ]
+          );
+        }
+      }
+    }
+
+    // 5. Devolver al almacén el stock de productos deseleccionados
+    for (const [prodId, oldStock] of existingStocks.entries()) {
+      if (!processedIds.has(prodId) && oldStock > 0) {
+        let prevWarehouseStock = 0;
+        let productName = `Producto #${prodId}`;
+
+        if (isAourum) {
+          const whRes = await query(
+            'SELECT stock FROM acon_aourum_product_stocks WHERE acon_brand_id = $1 AND aourum_product_id = $2',
+            [brandId, prodId]
+          );
+          prevWarehouseStock = whRes.rows.length > 0 ? Number(whRes.rows[0].stock) : 0;
+          const newWhStock = prevWarehouseStock + oldStock;
+
+          await query(
+            `INSERT INTO acon_aourum_product_stocks (acon_brand_id, aourum_product_id, stock)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (acon_brand_id, aourum_product_id)
+             DO UPDATE SET stock = $3`,
+            [brandId, prodId, newWhStock]
+          );
+
+          const { data } = await aourumSupabase
+            .from('products')
+            .select('name')
+            .eq('id', prodId)
+            .single();
+          if (data) productName = data.name;
+
+          await query(
+            `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              brandId,
+              prodId,
+              productName,
+              'aourum',
+              prevWarehouseStock,
+              newWhStock,
+              oldStock,
+              `${username || 'Sistema'} (Removido de Feria: ${sectionName})`
+            ]
+          );
+        } else {
+          const whRes = await query(
+            'SELECT name, stock FROM acon_products WHERE id = $1 AND acon_brand_id = $2',
+            [prodId, brandId]
+          );
+          if (whRes.rows.length > 0) {
+            prevWarehouseStock = Number(whRes.rows[0].stock);
+            productName = whRes.rows[0].name;
+          }
+          const newWhStock = prevWarehouseStock + oldStock;
+
+          await query(
+            'UPDATE acon_products SET stock = $1 WHERE id = $2 AND acon_brand_id = $3',
+            [newWhStock, prodId, brandId]
+          );
+
+          await query(
+            `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              brandId,
+              prodId,
+              productName,
+              'local',
+              prevWarehouseStock,
+              newWhStock,
+              oldStock,
+              `${username || 'Sistema'} (Removido de Feria: ${sectionName})`
+            ]
+          );
+        }
+      }
+    }
+
+    // 6. Limpiar catálogo previo de la sección e insertar la nueva selección con stock
     await query('DELETE FROM acon_section_products WHERE section_id = $1', [sectionId]);
     
-    // Insertar nueva selección con precios personalizados
     for (const item of itemsToInsert) {
       await query(
-        'INSERT INTO acon_section_products (section_id, product_id, custom_price) VALUES ($1, $2, $3)',
-        [sectionId, item.id, item.custom_price]
+        'INSERT INTO acon_section_products (section_id, product_id, custom_price, stock) VALUES ($1, $2, $3, $4)',
+        [sectionId, item.id, item.custom_price, item.stock]
       );
     }
     
@@ -1150,7 +1491,7 @@ app.post('/api/sections/:sectionId/products', async (req, res) => {
   } catch (error) {
     await query('ROLLBACK');
     console.error('Error setting section products:', error);
-    return res.status(500).json({ error: 'Error al guardar catálogo de la sección.' });
+    return res.status(500).json({ error: 'Error al guardar catálogo y actualizar stock.' });
   }
 });
 

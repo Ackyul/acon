@@ -105,6 +105,7 @@ export async function initDb() {
         section_id INTEGER REFERENCES acon_sections(id) ON DELETE CASCADE,
         product_id INTEGER NOT NULL,
         custom_price NUMERIC(10, 2),
+        stock INTEGER NOT NULL DEFAULT 0,
         UNIQUE(section_id, product_id)
       );
 
@@ -165,6 +166,7 @@ export async function initDb() {
       ALTER TABLE acon_brands ADD COLUMN IF NOT EXISTS sales_enabled BOOLEAN DEFAULT true;
       ALTER TABLE acon_brands ADD COLUMN IF NOT EXISTS inventory_enabled BOOLEAN DEFAULT true;
       ALTER TABLE acon_section_products ADD COLUMN IF NOT EXISTS custom_price NUMERIC(10, 2);
+      ALTER TABLE acon_section_products ADD COLUMN IF NOT EXISTS stock INTEGER NOT NULL DEFAULT 0;
       
       CREATE TABLE IF NOT EXISTS acon_inventory_history (
         id SERIAL PRIMARY KEY,

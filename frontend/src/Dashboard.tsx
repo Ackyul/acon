@@ -48,6 +48,7 @@ interface Product {
   price: number;
   price_aourum?: number | null;
   stock?: number;
+  section_stock?: number;
   image?: string;
   category?: string;
 }
@@ -139,6 +140,7 @@ export default function Dashboard() {
   const [sectionProductIds, setSectionProductIds] = useState<number[]>([]);
   const [activeSectionProducts, setActiveSectionProducts] = useState<Product[]>([]);
   const [customPrices, setCustomPrices] = useState<Record<number, number | null>>({});
+  const [sectionStocks, setSectionStocks] = useState<Record<number, number>>({});
   const [configuringCatalog, setConfiguringCatalog] = useState(false);
   const [savingCatalog, setSavingCatalog] = useState(false);
 
@@ -352,14 +354,17 @@ export default function Dashboard() {
         setActiveSectionProducts(data.active || []);
         setSectionProductIds(data.allIds || []);
         
-        // Parse custom prices
+        // Parse custom prices and stocks
         const priceMap: Record<number, number | null> = {};
+        const stockMap: Record<number, number> = {};
         if (Array.isArray(data.customPrices)) {
           data.customPrices.forEach((item: any) => {
             priceMap[item.product_id] = item.custom_price;
+            stockMap[item.product_id] = item.stock || 0;
           });
         }
         setCustomPrices(priceMap);
+        setSectionStocks(stockMap);
         
         // If no products selected yet, automatically open catalog selection checklist
         if (!data.allIds || data.allIds.length === 0) {
@@ -538,8 +543,22 @@ export default function Dashboard() {
 
   // Cart operations
   const addToCart = (product: Product) => {
+    // Si estamos dentro de una feria, validar contra el stock asignado de la feria (section_stock).
+    // De lo contrario, validar contra el stock del almacén (stock).
+    const maxStock = selectedSection ? (product.section_stock ?? 0) : (product.stock ?? 0);
+
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id);
+      const currentQty = existing ? existing.quantity : 0;
+
+      if (currentQty >= maxStock) {
+        setCheckoutError(`No hay suficiente stock disponible (${maxStock} u. máx).`);
+        // Limpiar mensaje automáticamente tras 3 segundos
+        setTimeout(() => setCheckoutError(''), 3000);
+        return prev;
+      }
+
+      setCheckoutError('');
       if (existing) {
         return prev.map(item =>
           item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
@@ -808,9 +827,9 @@ export default function Dashboard() {
   };
 
   const handleDeleteSection = async (sectionId: number) => {
-    if (!brand || !window.confirm('¿Seguro que deseas eliminar esta sección de venta? Se borrarán todas sus ventas asociadas.')) return;
+    if (!brand || !window.confirm('¿Seguro que deseas eliminar esta sección de venta? Se borrarán todas sus ventas asociadas y el stock restante se devolverá al almacén.')) return;
     try {
-      const res = await fetch(`${API_BASE}/sections/${sectionId}`, {
+      const res = await fetch(`${API_BASE}/sections/${sectionId}?username=${currentUser || 'desconocido'}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -825,6 +844,37 @@ export default function Dashboard() {
     }
   };
 
+  const handleEndSection = async () => {
+    if (!selectedSection) return;
+    const firstConfirm = window.confirm(
+      `¿Estás seguro de que deseas terminar la feria "${selectedSection.name}"?\nEsta acción finalizará la feria y devolverá todo el stock restante al almacén general de forma automática.`
+    );
+    if (!firstConfirm) return;
+
+    const secondConfirm = window.confirm(
+      `¡CONFIRMACIÓN DE SEGURIDAD!\n¿Estás totalmente seguro? Esta acción es permanente, cerrará la feria y consolidará el inventario en el historial.`
+    );
+    if (!secondConfirm) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/sections/${selectedSection.id}?username=${currentUser || 'desconocido'}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        alert('La feria ha sido finalizada y el stock sobrante ha retornado al almacén general.');
+        setSelectedSection(null);
+        setCart([]);
+        if (brand) fetchSections(String(brand.id));
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.error || 'Error al finalizar la feria.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error de red al finalizar la feria.');
+    }
+  };
+
   // Section Catalog Active List persist
   const handleSaveSectionCatalog = async () => {
     if (!selectedSection) return;
@@ -832,19 +882,21 @@ export default function Dashboard() {
     try {
       const productsPayload = sectionProductIds.map(pId => ({
         id: pId,
-        custom_price: customPrices[pId] !== undefined ? customPrices[pId] : null
+        custom_price: customPrices[pId] !== undefined ? customPrices[pId] : null,
+        stock: sectionStocks[pId] !== undefined ? Number(sectionStocks[pId]) : 0
       }));
 
       const res = await fetch(`${API_BASE}/sections/${selectedSection.id}/products`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ products: productsPayload })
+        body: JSON.stringify({ products: productsPayload, username: currentUser || 'desconocido' })
       });
       if (res.ok) {
         setConfiguringCatalog(false);
         fetchSectionProducts(String(selectedSection.id));
       } else {
-        alert('Error al guardar selección.');
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.error || 'Error al guardar selección.');
       }
     } catch (e) {
       console.error(e);
@@ -1328,13 +1380,23 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => { setSelectedSection(null); setCart([]); }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.08] text-slate-300 hover:text-white text-xs font-semibold cursor-pointer transition-all ml-auto"
-                    >
-                      <ArrowLeft className="w-3.5 h-3.5" />
-                      <span>Volver a Ferias</span>
-                    </button>
+                    <div className="flex items-center gap-2 ml-auto">
+                      <button
+                        onClick={handleEndSection}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/15 text-red-400 hover:text-red-300 text-xs font-semibold cursor-pointer transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Terminar Feria</span>
+                      </button>
+
+                      <button
+                        onClick={() => { setSelectedSection(null); setCart([]); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.08] text-slate-300 hover:text-white text-xs font-semibold cursor-pointer transition-all"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>Volver a Ferias</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Section sub navigation tabs */}
@@ -1437,7 +1499,7 @@ export default function Dashboard() {
                                           <span className="text-xs text-slate-200 font-semibold">{p.name}</span>
                                         </div>
                                         {isChecked ? (
-                                          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                          <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
                                             {p.price_aourum !== null && p.price_aourum !== undefined && (
                                               <div className="text-right flex flex-col justify-center shrink-0">
                                                 <span className="text-[9px] text-slate-500 line-through">
@@ -1446,6 +1508,8 @@ export default function Dashboard() {
                                                 <span className="text-[7px] text-[#6699FF] font-bold uppercase tracking-wider">Aourum</span>
                                               </div>
                                             )}
+                                            
+                                            {/* Precio Custom */}
                                             <div className="relative flex items-center">
                                               <span className="absolute left-2 text-[10px] text-slate-400 font-medium pointer-events-none">S/.</span>
                                               <input
@@ -1460,8 +1524,32 @@ export default function Dashboard() {
                                                     [p.id]: val
                                                   }));
                                                 }}
-                                                className="w-20 bg-white/[0.03] border border-white/[0.08] focus:border-[#0044CC]/60 rounded-lg pl-6 pr-2 py-1 text-xs text-white focus:outline-none text-right placeholder-slate-500 transition-colors"
+                                                className="w-16 bg-white/[0.03] border border-white/[0.08] focus:border-[#0044CC]/60 rounded-lg pl-5 pr-2 py-1 text-xs text-white focus:outline-none text-right placeholder-slate-500 transition-colors"
+                                                title="Precio personalizado para feria"
                                               />
+                                            </div>
+
+                                            {/* Stock Asignado */}
+                                            <div className="flex items-center gap-1">
+                                              <span className="text-[9px] text-slate-400 whitespace-nowrap">Stock:</span>
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                placeholder="0"
+                                                value={sectionStocks[p.id] !== undefined ? sectionStocks[p.id] : ''}
+                                                onChange={e => {
+                                                  const val = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value));
+                                                  setSectionStocks(prev => ({
+                                                    ...prev,
+                                                    [p.id]: val
+                                                  }));
+                                                }}
+                                                className="w-12 bg-white/[0.03] border border-white/[0.08] focus:border-[#0044CC]/60 rounded-lg px-1.5 py-1 text-xs text-white focus:outline-none text-center placeholder-slate-500 transition-colors"
+                                                title="Stock asignado a feria"
+                                              />
+                                              <span className="text-[9px] text-slate-500 whitespace-nowrap">
+                                                / {p.stock ?? 0} u.
+                                              </span>
                                             </div>
                                           </div>
                                         ) : (
@@ -1569,8 +1657,8 @@ export default function Dashboard() {
                                           <div className="flex items-center gap-1.5 flex-wrap">
                                             <h4 className="font-semibold text-xs text-white truncate leading-tight group-hover:text-[#6699FF] transition-colors">{product.name}</h4>
                                             <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wide uppercase shrink-0
-                                              ${(product.stock ?? 0) > 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                                              {(product.stock ?? 0) > 0 ? `${product.stock} u.` : 'Sin stock'}
+                                              ${(product.section_stock ?? 0) > 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                                              {(product.section_stock ?? 0) > 0 ? `${product.section_stock} u.` : 'Sin stock'}
                                             </span>
                                           </div>
                                           <p className="text-[10px] text-slate-500 truncate mt-0.5">{product.category || 'Otros'}</p>
