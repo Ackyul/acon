@@ -990,13 +990,13 @@ app.get('/api/brands/:id/sections', async (req, res) => {
   const { id } = req.params;
   try {
     const result = await query(
-      `SELECT s.id, s.name, s.created_by, s.created_at,
+      `SELECT s.id, s.name, s.created_by, s.created_at, s.status, s.ended_at,
               COUNT(sl.id) as sales_count,
               COALESCE(SUM(sl.total), 0) as total_sales
        FROM acon_sections s
        LEFT JOIN acon_sales sl ON s.id = sl.section_id
        WHERE s.acon_brand_id = $1
-       GROUP BY s.id, s.name, s.created_by, s.created_at
+       GROUP BY s.id, s.name, s.created_by, s.created_at, s.status, s.ended_at
        ORDER BY s.created_at DESC`,
       [id]
     );
@@ -1006,6 +1006,8 @@ app.get('/api/brands/:id/sections', async (req, res) => {
       name: row.name,
       created_by: row.created_by,
       created_at: row.created_at,
+      status: row.status,
+      ended_at: row.ended_at,
       sales_count: Number(row.sales_count),
       total_sales: Number(row.total_sales)
     }));
@@ -1135,8 +1137,8 @@ app.delete('/api/sections/:id', async (req, res) => {
       }
     }
 
-    // 5. Eliminar la sección
-    await query('DELETE FROM acon_sections WHERE id = $1', [id]);
+    // 5. Concluir la sección
+    await query("UPDATE acon_sections SET status = 'ended', ended_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
 
     await query('COMMIT');
     return res.json({ success: true, message: 'Feria finalizada con éxito y stock devuelto al almacén.' });
@@ -1144,6 +1146,120 @@ app.delete('/api/sections/:id', async (req, res) => {
     await query('ROLLBACK');
     console.error('Error ending section:', error);
     return res.status(500).json({ error: 'Error al finalizar la feria y devolver el stock.' });
+  }
+});
+
+// Obtener estadísticas detalladas de una feria concluida
+app.get('/api/sections/:sectionId/stats', async (req, res) => {
+  const { sectionId } = req.params;
+  try {
+    // 1. Obtener detalles de la sección
+    const sectionRes = await query(
+      'SELECT id, name, created_by, created_at, status, ended_at FROM acon_sections WHERE id = $1',
+      [sectionId]
+    );
+    if (sectionRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Sección no encontrada' });
+    }
+    const section = sectionRes.rows[0];
+
+    // 2. Obtener la recaudación total de esta sección
+    const revenueRes = await query(
+      'SELECT COALESCE(SUM(total), 0) AS total_revenue FROM acon_sales WHERE section_id = $1',
+      [sectionId]
+    );
+    const totalRevenue = Number(revenueRes.rows[0].total_revenue);
+
+    // 3. Obtener los productos asignados con el stock que quedó
+    const assignedRes = await query(
+      'SELECT product_id, custom_price, stock FROM acon_section_products WHERE section_id = $1',
+      [sectionId]
+    );
+    const assignedMap = new Map(assignedRes.rows.map(r => [
+      Number(r.product_id), 
+      { custom_price: r.custom_price, remaining_stock: Number(r.stock) }
+    ]));
+    const assignedIds = Array.from(assignedMap.keys());
+
+    // 4. Obtener la cantidad de unidades vendidas por producto en esta sección
+    const soldRes = await query(
+      `SELECT si.aourum_product_id AS product_id, SUM(si.quantity) AS sold_qty
+       FROM acon_sales s
+       JOIN acon_sale_items si ON s.id = si.sale_id
+       WHERE s.section_id = $1
+       GROUP BY si.aourum_product_id`,
+      [sectionId]
+    );
+    const soldMap = new Map(soldRes.rows.map(r => [Number(r.product_id), Number(r.sold_qty)]));
+
+    // 5. Obtener los nombres y precios base de los productos para consolidar
+    const brandIdRes = await query('SELECT acon_brand_id FROM acon_sections WHERE id = $1', [sectionId]);
+    if (brandIdRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Marca no encontrada para la sección' });
+    }
+    const brandId = brandIdRes.rows[0].acon_brand_id;
+    const brandRes = await query('SELECT aourum_brand_id FROM acon_brands WHERE id = $1', [brandId]);
+    const aourumBrandId = brandRes.rows[0].aourum_brand_id;
+
+    let allProducts = [];
+    if (aourumBrandId !== null && assignedIds.length > 0) {
+      const { data, error } = await aourumSupabase
+        .from('products')
+        .select('id, name, description, price, price_aourum, image, category')
+        .in('id', assignedIds);
+      if (error) throw error;
+      allProducts = data || [];
+    } else if (assignedIds.length > 0) {
+      const localProducts = await query(
+        'SELECT * FROM acon_products WHERE id = ANY($1)',
+        [assignedIds]
+      );
+      allProducts = localProducts.rows;
+    }
+
+    let totalRemainingStock = 0;
+    let totalSoldStock = 0;
+
+    const productsStats = allProducts.map(p => {
+      const pId = Number(p.id);
+      const assigned = assignedMap.get(pId);
+      const customPrice = assigned ? assigned.custom_price : null;
+      const remainingStock = assigned ? assigned.remaining_stock : 0;
+      const soldStock = soldMap.get(pId) || 0;
+
+      totalRemainingStock += remainingStock;
+      totalSoldStock += soldStock;
+
+      const basePrice = (p.price_aourum !== null && p.price_aourum !== undefined) ? Number(p.price_aourum) : Number(p.price);
+
+      return {
+        id: pId,
+        name: p.name,
+        category: p.category,
+        image: p.image,
+        price: customPrice !== null && customPrice !== undefined ? Number(customPrice) : basePrice,
+        remaining_stock: remainingStock,
+        sold_stock: soldStock
+      };
+    });
+
+    return res.json({
+      section: {
+        id: section.id,
+        name: section.name,
+        created_by: section.created_by,
+        created_at: section.created_at,
+        ended_at: section.ended_at,
+        status: section.status
+      },
+      total_revenue: totalRevenue,
+      total_remaining_stock: totalRemainingStock,
+      total_sold_stock: totalSoldStock,
+      products: productsStats
+    });
+  } catch (error) {
+    console.error('Error getting section stats:', error);
+    return res.status(500).json({ error: 'Error al obtener estadísticas de la feria.' });
   }
 });
 

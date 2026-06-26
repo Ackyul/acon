@@ -97,6 +97,8 @@ export async function initDb() {
         acon_brand_id INTEGER REFERENCES acon_brands(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         created_by VARCHAR(255) NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'active',
+        ended_at TIMESTAMP WITH TIME ZONE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -167,6 +169,8 @@ export async function initDb() {
       ALTER TABLE acon_brands ADD COLUMN IF NOT EXISTS inventory_enabled BOOLEAN DEFAULT true;
       ALTER TABLE acon_section_products ADD COLUMN IF NOT EXISTS custom_price NUMERIC(10, 2);
       ALTER TABLE acon_section_products ADD COLUMN IF NOT EXISTS stock INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE acon_sections ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active';
+      ALTER TABLE acon_sections ADD COLUMN IF NOT EXISTS ended_at TIMESTAMP WITH TIME ZONE;
       
       CREATE TABLE IF NOT EXISTS acon_inventory_history (
         id SERIAL PRIMARY KEY,

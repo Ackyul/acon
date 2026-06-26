@@ -78,6 +78,8 @@ interface SalesSection {
   name: string;
   created_by: string;
   created_at: string;
+  ended_at?: string | null;
+  status?: 'active' | 'ended';
   sales_count: number;
   total_sales: number;
 }
@@ -89,7 +91,7 @@ interface Collaborator {
 }
 
 type Tab = 'sales' | 'inventory';
-type SalesSubTab = 'sections' | 'general_history';
+type SalesSubTab = 'sections' | 'concluded' | 'general_history';
 type SectionSubTab = 'counter' | 'history';
 type WarehouseSubTab = 'internal' | 'inventario' | 'products' | 'collaborators';
 
@@ -143,6 +145,15 @@ export default function Dashboard() {
   const [sectionStocks, setSectionStocks] = useState<Record<number, number>>({});
   const [configuringCatalog, setConfiguringCatalog] = useState(false);
   const [savingCatalog, setSavingCatalog] = useState(false);
+
+  // Concluded Section Stats State
+  const [selectedConcludedStats, setSelectedConcludedStats] = useState<{
+    section: SalesSection;
+    total_revenue: number;
+    total_remaining_stock: number;
+    total_sold_stock: number;
+    products: any[];
+  } | null>(null);
 
   // Warehouse Histories State
   const [inventorySubTab, setInventorySubTab] = useState<'list' | 'history'>('list');
@@ -271,7 +282,7 @@ export default function Dashboard() {
 
   // Bloquear scroll del fondo cuando hay overlays/modales activos
   useEffect(() => {
-    if (stockModal.isOpen || showCartMobile) {
+    if (stockModal.isOpen || showCartMobile || !!selectedConcludedStats) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -279,7 +290,7 @@ export default function Dashboard() {
     return () => {
       document.body.style.overflow = '';
     };
-  }, [stockModal.isOpen, showCartMobile]);
+  }, [stockModal.isOpen, showCartMobile, selectedConcludedStats]);
 
   // Debounced search for collaborators
   useEffect(() => {
@@ -887,6 +898,20 @@ export default function Dashboard() {
     }
   };
 
+  const handleOpenConcludedStats = async (sec: SalesSection) => {
+    try {
+      const res = await fetch(`${API_BASE}/sections/${sec.id}/stats`);
+      if (res.ok) {
+        setSelectedConcludedStats(await res.json());
+      } else {
+        alert('Error al cargar estadísticas de la feria.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error de red al cargar estadísticas.');
+    }
+  };
+
   // Section Catalog Active List persist
   const handleSaveSectionCatalog = async () => {
     if (!selectedSection) return;
@@ -1148,7 +1173,7 @@ export default function Dashboard() {
               {/* If no Section (Feria) selected, display section manager */}
               {!selectedSection ? (
                 <div className="space-y-6">
-                  {/* Internal Subtabs: Secciones vs Historial General */}
+                  {/* Internal Subtabs: Secciones vs Ferias Concluidas vs Historial General */}
                   <div className="flex border-b border-white/[0.06] pb-3 gap-2">
                     <button
                       onClick={() => setSalesSubTab('sections')}
@@ -1160,7 +1185,19 @@ export default function Dashboard() {
                           : 'text-slate-400 hover:text-white border border-transparent hover:bg-white/[0.02]'}`}
                     >
                       <Calendar className="w-3.5 h-3.5" />
-                      <span>Ferias / Secciones</span>
+                      <span>Ferias Activas</span>
+                    </button>
+                    <button
+                      onClick={() => setSalesSubTab('concluded')}
+                      className={`flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-xs font-bold transition-all cursor-pointer
+                        ${salesSubTab === 'concluded'
+                          ? brand.type === 'aourum'
+                            ? 'bg-[#0044CC]/20 text-[#6699FF] border border-[#0044CC]/30'
+                            : 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                          : 'text-slate-400 hover:text-white border border-transparent hover:bg-white/[0.02]'}`}
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      <span>Ferias Concluidas</span>
                     </button>
                     <button
                       onClick={() => setSalesSubTab('general_history')}
@@ -1217,15 +1254,15 @@ export default function Dashboard() {
                             <Loader2 className="w-6 h-6 animate-spin text-[#2266FF]" />
                             <p className="text-xs">Cargando secciones...</p>
                           </div>
-                        ) : sections.length === 0 ? (
+                        ) : sections.filter(s => s.status !== 'ended').length === 0 ? (
                           <div className="rounded-xl border border-dashed border-white/10 p-12 text-center bg-white/[0.01]">
                             <Calendar className="w-8 h-8 text-slate-800 mx-auto mb-2" />
-                            <p className="text-slate-400 text-xs font-medium">Aún no hay ferias o secciones creadas</p>
+                            <p className="text-slate-400 text-xs font-medium">Aún no hay ferias o secciones activas</p>
                             <p className="text-[10px] text-slate-600 mt-1">Crea una sección arriba para comenzar a vender en ferias.</p>
                           </div>
                         ) : (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {sections.map(sec => (
+                            {sections.filter(s => s.status !== 'ended').map(sec => (
                               <div
                                 key={sec.id}
                                 className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.015] hover:bg-white/[0.03] hover:border-white/[0.1] transition-all flex flex-col justify-between group"
@@ -1279,6 +1316,66 @@ export default function Dashboard() {
                     </div>
                   )}
 
+                  {/* SUBVIEW: FERIAS CONCLUIDAS */}
+                  {salesSubTab === 'concluded' && (
+                    <div className="space-y-6">
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Historial de Ferias Concluidas</h3>
+                        
+                        {loadingSections ? (
+                          <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
+                            <Loader2 className="w-6 h-6 animate-spin text-[#2266FF]" />
+                            <p className="text-xs">Cargando ferias concluidas...</p>
+                          </div>
+                        ) : sections.filter(s => s.status === 'ended').length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-white/10 p-12 text-center bg-white/[0.01]">
+                            <History className="w-8 h-8 text-slate-800 mx-auto mb-2" />
+                            <p className="text-slate-400 text-xs font-medium">Aún no tienes ferias concluidas</p>
+                            <p className="text-[10px] text-slate-600 mt-1">Al terminar una feria activa, aparecerá aquí con sus reportes detallados.</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {sections.filter(s => s.status === 'ended').map(sec => (
+                              <div
+                                key={sec.id}
+                                className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.015] hover:bg-white/[0.03] hover:border-white/[0.1] transition-all flex flex-col justify-between group"
+                              >
+                                <div>
+                                  <div className="flex justify-between items-start gap-2 mb-2">
+                                    <h4 className="font-bold text-sm text-white group-hover:text-[#6699FF] transition-colors truncate">{sec.name}</h4>
+                                    <span className="shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                                      Finalizada
+                                    </span>
+                                  </div>
+                                  <div className="space-y-1 text-[10px] text-slate-500 mb-4">
+                                    <p>Creado por: {sec.created_by}</p>
+                                    <p>Inicio: {new Date(sec.created_at).toLocaleDateString('es-PE')}</p>
+                                    {sec.ended_at && <p>Término: {new Date(sec.ended_at).toLocaleDateString('es-PE')}</p>}
+                                  </div>
+                                </div>
+
+                                <div className="border-t border-white/[0.04] pt-3 flex items-center justify-between gap-4 mt-auto">
+                                  <div>
+                                    <p className="text-[9px] text-slate-500 uppercase font-bold leading-none">Total Recaudado</p>
+                                    <p className="text-sm font-black text-emerald-400 mt-1">S/. {sec.total_sales.toFixed(2)}</p>
+                                  </div>
+                                  
+                                  <button
+                                    onClick={() => handleOpenConcludedStats(sec)}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.08] text-slate-300 hover:text-white text-xs font-semibold cursor-pointer transition-all"
+                                  >
+                                    <BarChart3 className="w-3.5 h-3.5" />
+                                    <span>Ver Reporte</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* SUBVIEW: HISTORIAL GENERAL (Global audit) */}
                   {salesSubTab === 'general_history' && (
                     <div className="space-y-6">
@@ -1305,31 +1402,68 @@ export default function Dashboard() {
                       <div className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.015] space-y-4">
                         <div className="flex items-center gap-2">
                           <Percent className="w-4 h-4 text-violet-400" />
-                          <h4 className="text-xs font-bold text-white uppercase tracking-wider">Desglose de Ventas por Feria</h4>
+                          <h4 className="text-xs font-bold text-white uppercase tracking-wider">Desglose de Ventas por Feria (Top 5)</h4>
                         </div>
                         
                         <div className="space-y-3">
-                          {sections.length === 0 ? (
-                            <p className="text-[10px] text-slate-500">No hay datos de secciones disponibles.</p>
-                          ) : (
-                            sections.map(sec => {
-                              const pct = historyTotal > 0 ? (sec.total_sales / historyTotal) * 100 : 0;
-                              return (
-                                <div key={sec.id} className="space-y-1.5">
-                                  <div className="flex justify-between text-xs font-medium">
-                                    <span className="text-slate-200">{sec.name}</span>
-                                    <span className="text-slate-400 font-bold">S/. {sec.total_sales.toFixed(2)} ({pct.toFixed(1)}%)</span>
-                                  </div>
-                                  <div className="w-full h-2 bg-white/[0.04] rounded-full overflow-hidden">
-                                    <div 
-                                      className="h-full bg-gradient-to-r from-violet-600 to-[#2266FF] rounded-full" 
-                                      style={{ width: `${pct}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
+                          {(() => {
+                            if (sections.length === 0) {
+                              return <p className="text-[10px] text-slate-500">No hay datos de secciones disponibles.</p>;
+                            }
+
+                            // Sort by sales descending
+                            const sortedSections = [...sections].sort((a, b) => b.total_sales - a.total_sales);
+                            
+                            let displaySections = sortedSections;
+                            let otherSales = 0;
+                            let otherSalesCount = 0;
+
+                            if (sortedSections.length > 5) {
+                              displaySections = sortedSections.slice(0, 5);
+                              const others = sortedSections.slice(5);
+                              otherSales = others.reduce((sum, s) => sum + s.total_sales, 0);
+                              otherSalesCount = others.length;
+                            }
+
+                            return (
+                              <>
+                                {displaySections.map(sec => {
+                                  const pct = historyTotal > 0 ? (sec.total_sales / historyTotal) * 100 : 0;
+                                  return (
+                                    <div key={sec.id} className="space-y-1.5">
+                                      <div className="flex justify-between text-xs font-medium">
+                                        <span className="text-slate-200">{sec.name}</span>
+                                        <span className="text-slate-400 font-bold">S/. {sec.total_sales.toFixed(2)} ({pct.toFixed(1)}%)</span>
+                                      </div>
+                                      <div className="w-full h-2 bg-white/[0.04] rounded-full overflow-hidden">
+                                        <div 
+                                          className="h-full bg-gradient-to-r from-violet-600 to-[#2266FF] rounded-full" 
+                                          style={{ width: `${pct}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                {otherSalesCount > 0 && (() => {
+                                  const pct = historyTotal > 0 ? (otherSales / historyTotal) * 100 : 0;
+                                  return (
+                                    <div className="space-y-1.5 border-t border-white/[0.04] pt-2.5">
+                                      <div className="flex justify-between text-xs font-medium">
+                                        <span className="text-slate-400 italic">Otras {otherSalesCount} ferias</span>
+                                        <span className="text-slate-500 font-bold">S/. {otherSales.toFixed(2)} ({pct.toFixed(1)}%)</span>
+                                      </div>
+                                      <div className="w-full h-2 bg-white/[0.02] rounded-full overflow-hidden">
+                                        <div 
+                                          className="h-full bg-slate-600 rounded-full" 
+                                          style={{ width: `${pct}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
 
@@ -3190,6 +3324,114 @@ export default function Dashboard() {
                 }}
               >
                 Guardar Ajuste
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Concluded Fair Stats Modal Overlay ── */}
+      {selectedConcludedStats && (
+        <div className="fixed inset-0 z-50 overflow-hidden flex items-center justify-center p-4">
+          {/* Backdrop overlay */}
+          <div 
+            onClick={() => setSelectedConcludedStats(null)}
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" 
+          />
+          
+          {/* Modal Container */}
+          <div 
+            className="relative w-full max-w-2xl rounded-3xl border border-white/[0.1] bg-[#0C0F16] p-6 space-y-6 shadow-2xl z-10 animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[85vh] overflow-hidden"
+            style={{ boxShadow: '0 20px 50px rgba(0,0,0,0.6)' }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4 shrink-0">
+              <div>
+                <h3 className="font-black text-white text-base md:text-lg">Reporte de Feria Concluida</h3>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Feria: <strong className="text-white">{selectedConcludedStats.section.name}</strong> · Finalizada el {selectedConcludedStats.section.ended_at ? new Date(selectedConcludedStats.section.ended_at).toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}
+                </p>
+              </div>
+              <button 
+                onClick={() => setSelectedConcludedStats(null)}
+                className="w-8 h-8 rounded-lg bg-white/[0.05] flex items-center justify-center text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content (Scrollable) */}
+            <div className="space-y-6 overflow-y-auto pr-1 flex-1">
+              {/* Summary Stats Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-4 rounded-2xl border border-white/[0.04] bg-white/[0.01] flex flex-col justify-between">
+                  <span className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Total Recaudado</span>
+                  <span className="text-xl font-black text-emerald-400 mt-1.5">
+                    S/. {selectedConcludedStats.total_revenue.toFixed(2)}
+                  </span>
+                </div>
+                <div className="p-4 rounded-2xl border border-white/[0.04] bg-white/[0.01] flex flex-col justify-between">
+                  <span className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Unidades Vendidas</span>
+                  <span className="text-xl font-black text-[#6699FF] mt-1.5">
+                    {selectedConcludedStats.total_sold_stock} u.
+                  </span>
+                </div>
+                <div className="p-4 rounded-2xl border border-white/[0.04] bg-white/[0.01] flex flex-col justify-between">
+                  <span className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Sobrante Devuelto</span>
+                  <span className="text-xl font-black text-violet-400 mt-1.5">
+                    {selectedConcludedStats.total_remaining_stock} u.
+                  </span>
+                </div>
+              </div>
+
+              {/* Product breakdown */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">Desglose de Productos en Feria</h4>
+                
+                {selectedConcludedStats.products.length === 0 ? (
+                  <p className="text-xs text-slate-500 text-center py-6">No se asignaron productos a esta feria.</p>
+                ) : (
+                  <div className="border border-white/[0.05] rounded-2xl overflow-hidden bg-white/[0.005]">
+                    {/* Table Headers */}
+                    <div className="grid grid-cols-12 gap-2 bg-white/[0.02] border-b border-white/[0.06] px-4 py-2.5 text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                      <div className="col-span-5">Producto</div>
+                      <div className="col-span-3 text-right">Precio Feria</div>
+                      <div className="col-span-2 text-center">Vendido</div>
+                      <div className="col-span-2 text-center">Sobrante</div>
+                    </div>
+
+                    {/* Table Body */}
+                    <div className="divide-y divide-white/[0.04] max-h-[250px] overflow-y-auto">
+                      {selectedConcludedStats.products.map(p => (
+                        <div key={p.id} className="grid grid-cols-12 gap-2 px-4 py-3 text-xs items-center">
+                          <div className="col-span-5 min-w-0">
+                            <p className="font-semibold text-slate-200 truncate leading-tight">{p.name}</p>
+                            <p className="text-[9px] text-slate-500 mt-0.5">{p.category || 'Otros'}</p>
+                          </div>
+                          <div className="col-span-3 text-right font-medium text-slate-300">
+                            S/. {Number(p.price).toFixed(2)}
+                          </div>
+                          <div className="col-span-2 text-center font-black text-[#6699FF]">
+                            {p.sold_stock} u.
+                          </div>
+                          <div className="col-span-2 text-center font-bold text-slate-400">
+                            {p.remaining_stock} u.
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="flex justify-end pt-3 border-t border-white/[0.06] shrink-0">
+              <button
+                onClick={() => setSelectedConcludedStats(null)}
+                className="px-5 py-2.5 rounded-xl border border-white/[0.08] hover:bg-white/[0.04] text-xs font-semibold text-slate-300 cursor-pointer transition-colors"
+              >
+                Cerrar Reporte
               </button>
             </div>
           </div>
