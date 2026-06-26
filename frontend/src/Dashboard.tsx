@@ -1526,10 +1526,10 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 ml-auto">
+                    <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto justify-end">
                       <button
                         onClick={handleEndSection}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/15 text-red-400 hover:text-red-300 text-xs font-semibold cursor-pointer transition-all"
+                        className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/15 text-red-400 hover:text-red-300 text-xs font-semibold cursor-pointer transition-all"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>Terminar Feria</span>
@@ -1537,7 +1537,7 @@ export default function Dashboard() {
 
                       <button
                         onClick={() => { setSelectedSection(null); setCart([]); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.08] text-slate-300 hover:text-white text-xs font-semibold cursor-pointer transition-all"
+                        className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.08] text-slate-300 hover:text-white text-xs font-semibold cursor-pointer transition-all"
                       >
                         <ArrowLeft className="w-3.5 h-3.5" />
                         <span>Volver a Ferias</span>
@@ -1634,18 +1634,18 @@ export default function Dashboard() {
                                       <div
                                         key={p.id}
                                         onClick={() => toggleCatalogProduct(p.id)}
-                                        className="flex items-center justify-between p-2.5 rounded-lg border border-white/[0.04] bg-white/[0.01] hover:bg-white/[0.03] cursor-pointer"
+                                        className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded-lg border border-white/[0.04] bg-white/[0.01] hover:bg-white/[0.03] cursor-pointer gap-2"
                                       >
                                         <div className="flex items-center gap-2">
-                                          <div className={`w-4 h-4 rounded border flex items-center justify-center
+                                          <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0
                                             ${isChecked ? 'bg-emerald-500 border-emerald-500' : 'border-white/20'}`}
                                           >
                                             {isChecked && <Check className="w-3 h-3 text-white" />}
                                           </div>
-                                          <span className="text-xs text-slate-200 font-semibold">{p.name}</span>
+                                          <span className="text-xs text-slate-200 font-semibold truncate max-w-[200px] sm:max-w-none">{p.name}</span>
                                         </div>
                                         {isChecked ? (
-                                          <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+                                          <div className="flex items-center gap-3 sm:justify-end flex-wrap pl-6 sm:pl-0" onClick={e => e.stopPropagation()}>
                                             {p.price_aourum !== null && p.price_aourum !== undefined && (
                                               <div className="text-right flex flex-col justify-center shrink-0">
                                                 <span className="text-[9px] text-slate-500 line-through">
@@ -1699,7 +1699,7 @@ export default function Dashboard() {
                                             </div>
                                           </div>
                                         ) : (
-                                          <span className="text-xs text-slate-500">
+                                          <span className="text-xs text-slate-500 pl-6 sm:pl-0">
                                             S/. {basePrice} {p.price_aourum !== null && p.price_aourum !== undefined && (
                                               <span className="ml-1 text-[8px] bg-[#0044CC]/20 text-[#6699FF] px-1 rounded font-bold border border-[#0044CC]/30">AOURUM</span>
                                             )}
@@ -3393,7 +3393,7 @@ export default function Dashboard() {
                 ) : (
                   <div className="border border-white/[0.05] rounded-2xl overflow-hidden bg-white/[0.005]">
                     {/* Table Headers */}
-                    <div className="grid grid-cols-12 gap-2 bg-white/[0.02] border-b border-white/[0.06] px-4 py-2.5 text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                    <div className="grid grid-cols-12 gap-2 bg-white/[0.02] border-b border-white/[0.06] px-2 py-2 sm:px-4 sm:py-2.5 text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-wider">
                       <div className="col-span-5">Producto</div>
                       <div className="col-span-3 text-right">Precio Feria</div>
                       <div className="col-span-2 text-center">Vendido</div>
@@ -3403,18 +3403,18 @@ export default function Dashboard() {
                     {/* Table Body */}
                     <div className="divide-y divide-white/[0.04] max-h-[250px] overflow-y-auto">
                       {selectedConcludedStats.products.map(p => (
-                        <div key={p.id} className="grid grid-cols-12 gap-2 px-4 py-3 text-xs items-center">
+                        <div key={p.id} className="grid grid-cols-12 gap-2 px-2 py-2.5 sm:px-4 sm:py-3 text-[10px] sm:text-xs items-center">
                           <div className="col-span-5 min-w-0">
                             <p className="font-semibold text-slate-200 truncate leading-tight">{p.name}</p>
-                            <p className="text-[9px] text-slate-500 mt-0.5">{p.category || 'Otros'}</p>
+                            <p className="text-[9px] text-slate-500 mt-0.5 truncate">{p.category || 'Otros'}</p>
                           </div>
-                          <div className="col-span-3 text-right font-medium text-slate-300">
+                          <div className="col-span-3 text-right font-medium text-slate-300 truncate">
                             S/. {Number(p.price).toFixed(2)}
                           </div>
-                          <div className="col-span-2 text-center font-black text-[#6699FF]">
+                          <div className="col-span-2 text-center font-black text-[#6699FF] truncate">
                             {p.sold_stock} u.
                           </div>
-                          <div className="col-span-2 text-center font-bold text-slate-400">
+                          <div className="col-span-2 text-center font-bold text-slate-400 truncate">
                             {p.remaining_stock} u.
                           </div>
                         </div>
