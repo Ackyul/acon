@@ -269,6 +269,18 @@ export default function Dashboard() {
     fetchSectionSalesHistory(String(selectedSection.id));
   }, [selectedSection]);
 
+  // Bloquear scroll del fondo cuando hay overlays/modales activos
+  useEffect(() => {
+    if (stockModal.isOpen || showCartMobile) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [stockModal.isOpen, showCartMobile]);
+
   // Debounced search for collaborators
   useEffect(() => {
     if (!newCollaboratorUsername.trim() || !brandId) {
