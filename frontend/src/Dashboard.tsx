@@ -1768,7 +1768,7 @@ export default function Dashboard() {
                                 <p className="text-[10px] text-slate-500 mt-1">Haz clic en "Ajustar Catálogo" arriba para activar productos en esta feria.</p>
                               </div>
                             ) : (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-1">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:max-h-[500px] lg:overflow-y-auto pr-1">
                                 {(() => {
                                   const filtered = activeSectionProducts.filter(p =>
                                     p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
