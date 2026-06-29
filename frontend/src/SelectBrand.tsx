@@ -39,8 +39,8 @@ interface AourumBrand {
 }
 
 export default function SelectBrand() {
-  const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [currentFullName, setCurrentFullName] = useState<string | null>(null);
+  const [currentUser] = useState<string | null>(() => localStorage.getItem('acon_user'));
+  const [currentFullName] = useState<string | null>(() => localStorage.getItem('acon_user_name') || localStorage.getItem('acon_user'));
   
   // Brand list owned by the user
   const [myBrands, setMyBrands] = useState<Brand[]>([]);
@@ -71,19 +71,6 @@ export default function SelectBrand() {
   
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const user = localStorage.getItem('acon_user');
-    const name = localStorage.getItem('acon_user_name');
-    if (!user) {
-      navigate('/auth');
-    } else {
-      setCurrentUser(user);
-      setCurrentFullName(name || user);
-      fetchMyBrands(user);
-      fetchAourumBrands();
-    }
-  }, []);
-
   const fetchMyBrands = async (user: string) => {
     setLoadingMy(true);
     try {
@@ -112,6 +99,17 @@ export default function SelectBrand() {
     }
   };
 
+  useEffect(() => {
+    const user = localStorage.getItem('acon_user');
+    if (!user) {
+      navigate('/auth');
+    } else {
+      fetchMyBrands(user);
+      fetchAourumBrands();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleCreateLocal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!localName.trim() || !currentUser) return;
@@ -136,7 +134,7 @@ export default function SelectBrand() {
       } else {
         setError(data.error || 'Error al crear marca local.');
       }
-    } catch (e) {
+    } catch {
       setError('Error de red al crear marca.');
     } finally {
       setCreatingLocal(false);
@@ -168,7 +166,7 @@ export default function SelectBrand() {
       } else {
         setError(data.error || 'Error al vincular marca de Aourum.');
       }
-    } catch (e) {
+    } catch {
       setError('Error de red al vincular marca.');
     } finally {
       setLinkingAourumId(null);
@@ -195,7 +193,7 @@ export default function SelectBrand() {
       } else {
         setError(data.error || 'Error al eliminar la marca.');
       }
-    } catch (e) {
+    } catch {
       setError('Error de red al eliminar la marca.');
     }
   };
@@ -226,7 +224,7 @@ export default function SelectBrand() {
       } else {
         setError(data.error || 'Error al actualizar las características.');
       }
-    } catch (e) {
+    } catch {
       setError('Error de red al actualizar las características.');
     }
   };

@@ -1,13 +1,53 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { aourumSupabase, query, initDb } from './db.js';
-import { hashPassword, verifyPassword } from './authUtils.js';
+import { hashPassword, verifyPassword, generateToken, verifyToken } from './authUtils.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+export interface AuthenticatedRequest extends Request {
+  user?: { username: string };
+}
+
+function authenticateToken(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ error: 'Token de acceso no proporcionado.' });
+  }
+
+  const decoded = verifyToken(token);
+  if (!decoded) {
+    return res.status(403).json({ error: 'Token inválido o expirado.' });
+  }
+
+  (req as AuthenticatedRequest).user = decoded;
+  next();
+}
+
+async function checkBrandAccess(brandId: string | number, username: string): Promise<{ hasAccess: boolean; role?: 'owner' | 'collaborator' }> {
+  try {
+    const checkRole = await query(
+      `SELECT b.owner_username,
+              (CASE WHEN b.owner_username = $2 THEN 'owner' ELSE 'collaborator' END) as user_role
+       FROM acon_brands b
+       LEFT JOIN acon_brand_collaborators c ON b.id = c.acon_brand_id
+       WHERE b.id = $1 AND (b.owner_username = $2 OR c.username = $2)`,
+      [brandId, username]
+    );
+    if (checkRole.rows.length === 0) {
+      return { hasAccess: false };
+    }
+    return { hasAccess: true, role: checkRole.rows[0].user_role as 'owner' | 'collaborator' };
+  } catch (error) {
+    console.error('Error checking brand access:', error);
+    return { hasAccess: false };
+  }
+}
 
 // ── CORS ──────────────────────────────────────────────────────────
 const allowedOrigins = [
@@ -54,7 +94,8 @@ app.post('/api/auth/register', async (req, res) => {
       [normalizedUsername, first_name.trim(), last_name.trim(), hashed]
     );
 
-    return res.status(201).json({ status: 'success', username: normalizedUsername, first_name, last_name });
+    const token = generateToken({ username: normalizedUsername });
+    return res.status(201).json({ status: 'success', username: normalizedUsername, first_name, last_name, token });
   } catch (error) {
     console.error('Error in register:', error);
     return res.status(500).json({ error: 'Error interno del servidor al registrar usuario.' });
@@ -80,11 +121,13 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
     }
 
+    const token = generateToken({ username: normalizedUsername });
     return res.json({
       status: 'success',
       username: normalizedUsername,
       first_name: result.rows[0].first_name,
-      last_name: result.rows[0].last_name
+      last_name: result.rows[0].last_name,
+      token
     });
   } catch (error) {
     console.error('Error in login:', error);
@@ -100,6 +143,14 @@ app.get('/api/status', async (_req, res) => {
   } catch {
     res.status(500).json({ status: 'error', db: 'neon unreachable' });
   }
+});
+
+// ── Global Auth Middleware for API ────────────────────────────────
+app.use('/api', (req, res, next) => {
+  if (req.path === '/auth/register' || req.path === '/auth/login' || req.path === '/status') {
+    return next();
+  }
+  authenticateToken(req, res, next);
 });
 
 // ── Marcas de Aourum (catálogo externo, solo lectura) ─────────────
@@ -130,9 +181,9 @@ app.get('/api/brands', async (_req, res) => {
 
 // ── Marcas del usuario (Propias y colaboraciones) ─────────────────
 app.get('/api/brands/my', async (req, res) => {
-  const { username } = req.query;
+  const username = (req as AuthenticatedRequest).user?.username;
   if (!username) {
-    return res.status(400).json({ error: 'username es requerido' });
+    return res.status(401).json({ error: 'Usuario no autenticado.' });
   }
 
   try {
@@ -195,9 +246,10 @@ app.get('/api/brands/my', async (req, res) => {
 
 // Crear marca local
 app.post('/api/brands/create-local', async (req, res) => {
-  const { name, owner_username, sales_enabled, inventory_enabled } = req.body;
+  const { name, sales_enabled, inventory_enabled } = req.body;
+  const owner_username = (req as AuthenticatedRequest).user?.username;
   if (!name || !owner_username) {
-    return res.status(400).json({ error: 'name y owner_username son requeridos' });
+    return res.status(400).json({ error: 'name es requerido' });
   }
 
   try {
@@ -217,9 +269,10 @@ app.post('/api/brands/create-local', async (req, res) => {
 
 // Vincular marca de Aourum (Asignar)
 app.post('/api/brands/link-aourum', async (req, res) => {
-  const { aourum_brand_id, name, owner_username, sales_enabled, inventory_enabled } = req.body;
+  const { aourum_brand_id, name, sales_enabled, inventory_enabled } = req.body;
+  const owner_username = (req as AuthenticatedRequest).user?.username;
   if (!aourum_brand_id || !name || !owner_username) {
-    return res.status(400).json({ error: 'aourum_brand_id, name y owner_username son requeridos' });
+    return res.status(400).json({ error: 'aourum_brand_id y name son requeridos' });
   }
 
   try {
@@ -251,8 +304,15 @@ app.post('/api/brands/link-aourum', async (req, res) => {
 // ── Obtener productos de una marca vinculada o local ──────────────
 app.get('/api/brands/:id/products', async (req, res) => {
   const { id } = req.params;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   try {
+    const brandAccess = await checkBrandAccess(id, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     const brandRes = await query('SELECT aourum_brand_id FROM acon_brands WHERE id = $1', [id]);
     if (brandRes.rows.length === 0) {
       return res.status(404).json({ error: 'Marca no encontrada.' });
@@ -297,12 +357,19 @@ app.get('/api/brands/:id/products', async (req, res) => {
 app.post('/api/brands/:id/products', async (req, res) => {
   const { id } = req.params;
   const { name, description, price, stock, category } = req.body;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   if (!name || price === undefined) {
     return res.status(400).json({ error: 'name y price son requeridos' });
   }
 
   try {
+    const brandAccess = await checkBrandAccess(id, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     const brandRes = await query('SELECT aourum_brand_id FROM acon_brands WHERE id = $1', [id]);
     if (brandRes.rows.length === 0) {
       return res.status(404).json({ error: 'Marca no encontrada.' });
@@ -328,7 +395,9 @@ app.post('/api/brands/:id/products', async (req, res) => {
 // Actualizar stock de un producto (Local o Aourum)
 app.patch('/api/brands/:brandId/products/:productId/stock', async (req, res) => {
   const { brandId, productId } = req.params;
-  const { stock, username } = req.body;
+  const { stock } = req.body;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   if (stock === undefined) {
     return res.status(400).json({ error: 'stock es requerido.' });
@@ -337,12 +406,21 @@ app.patch('/api/brands/:brandId/products/:productId/stock', async (req, res) => 
   const newStock = Math.max(0, Number(stock));
 
   try {
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     const brandRes = await query('SELECT aourum_brand_id FROM acon_brands WHERE id = $1', [brandId]);
     if (brandRes.rows.length === 0) {
       return res.status(404).json({ error: 'Marca no encontrada.' });
     }
 
     const brand = brandRes.rows[0];
+
+    // Fetch full name of user for log
+    const userRes = await query('SELECT first_name, last_name FROM acon_users WHERE username = $1', [username]);
+    const userFullName = userRes.rows.length > 0 ? `${userRes.rows[0].first_name} ${userRes.rows[0].last_name}` : username;
 
     if (brand.aourum_brand_id !== null) {
       // Caso Aourum: Obtener stock anterior y nombre de producto
@@ -375,7 +453,7 @@ app.patch('/api/brands/:brandId/products/:productId/stock', async (req, res) => 
         await query(
           `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [Number(brandId), Number(productId), productName, 'aourum', previousStock, newStock, delta, username || 'Sistema']
+          [Number(brandId), Number(productId), productName, 'aourum', previousStock, newStock, delta, userFullName]
         );
       }
 
@@ -407,7 +485,7 @@ app.patch('/api/brands/:brandId/products/:productId/stock', async (req, res) => 
         await query(
           `INSERT INTO acon_inventory_history (acon_brand_id, product_id, product_name, product_type, previous_stock, new_stock, delta, updated_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [Number(brandId), Number(productId), productName, 'local', previousStock, newStock, delta, username || 'Sistema']
+          [Number(brandId), Number(productId), productName, 'local', previousStock, newStock, delta, userFullName]
         );
       }
 
@@ -422,11 +500,8 @@ app.patch('/api/brands/:brandId/products/:productId/stock', async (req, res) => 
 // Obtener detalle de marca por ID
 app.get('/api/brands/detail/:id', async (req, res) => {
   const { id } = req.params;
-  const { username } = req.query;
-
-  if (!username) {
-    return res.status(400).json({ error: 'username es requerido.' });
-  }
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   try {
     // Verificar si es propietario o colaborador
@@ -488,19 +563,13 @@ app.get('/api/brands/detail/:id', async (req, res) => {
 // Eliminar marca (Owner only)
 app.delete('/api/brands/:id', async (req, res) => {
   const { id } = req.params;
-  const { owner_username } = req.query;
-
-  if (!owner_username) {
-    return res.status(400).json({ error: 'owner_username es requerido' });
-  }
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   try {
     // 1. Verificar que el solicitante sea el propietario
-    const ownerRes = await query('SELECT owner_username FROM acon_brands WHERE id = $1', [id]);
-    if (ownerRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Marca no encontrada.' });
-    }
-    if (ownerRes.rows[0].owner_username !== owner_username) {
+    const brandAccess = await checkBrandAccess(id, username);
+    if (!brandAccess.hasAccess || brandAccess.role !== 'owner') {
       return res.status(403).json({ error: 'Solo el propietario de la marca puede eliminarla.' });
     }
 
@@ -516,11 +585,9 @@ app.delete('/api/brands/:id', async (req, res) => {
 // Actualizar características/módulos de una marca (Owner only)
 app.patch('/api/brands/:id/features', async (req, res) => {
   const { id } = req.params;
-  const { owner_username, sales_enabled, inventory_enabled } = req.body;
-
-  if (!owner_username) {
-    return res.status(400).json({ error: 'owner_username es requerido' });
-  }
+  const { sales_enabled, inventory_enabled } = req.body;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   if (sales_enabled === undefined || inventory_enabled === undefined) {
     return res.status(400).json({ error: 'sales_enabled e inventory_enabled son requeridos' });
@@ -532,11 +599,8 @@ app.patch('/api/brands/:id/features', async (req, res) => {
 
   try {
     // 1. Verificar que el solicitante sea el propietario
-    const ownerRes = await query('SELECT owner_username FROM acon_brands WHERE id = $1', [id]);
-    if (ownerRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Marca no encontrada.' });
-    }
-    if (ownerRes.rows[0].owner_username !== owner_username) {
+    const brandAccess = await checkBrandAccess(id, username);
+    if (!brandAccess.hasAccess || brandAccess.role !== 'owner') {
       return res.status(403).json({ error: 'Solo el propietario de la marca puede configurar sus características.' });
     }
 
@@ -555,13 +619,24 @@ app.patch('/api/brands/:id/features', async (req, res) => {
 
 // ── Ventas (Neon) ─────────────────────────────────────────────────
 app.post('/api/sales', async (req, res) => {
-  const { acon_brand_id, section_id, created_by, total, items } = req.body;
+  const { acon_brand_id, section_id, total, items } = req.body;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   if (!acon_brand_id || !total || !items?.length) {
     return res.status(400).json({ error: 'Faltan datos de la venta' });
   }
 
   try {
+    const brandAccess = await checkBrandAccess(acon_brand_id, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
+    // Fetch full name of user
+    const userRes = await query('SELECT first_name, last_name FROM acon_users WHERE username = $1', [username]);
+    const created_by = userRes.rows.length > 0 ? `${userRes.rows[0].first_name} ${userRes.rows[0].last_name}` : username;
+
     await query('BEGIN');
 
     // 1. Verificar si la marca es de Aourum o Local
@@ -682,11 +757,19 @@ app.post('/api/sales', async (req, res) => {
 // ── Historial de Ventas por Marca o Sección (Neon) ─────────────────
 app.get('/api/sales', async (req, res) => {
   const { acon_brand_id, section_id } = req.query;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
   if (!acon_brand_id) {
     return res.status(400).json({ error: 'acon_brand_id es requerido' });
   }
 
   try {
+    const brandAccess = await checkBrandAccess(Number(acon_brand_id), username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     let sql = `
       SELECT s.id as sale_id, s.created_by, s.total, s.created_at,
              si.id as item_id, si.aourum_product_id, si.product_name, si.unit_price, si.quantity
@@ -741,11 +824,19 @@ app.get('/api/sales', async (req, res) => {
 // ── Insumos internos: Listar (Neon) ───────────────────────────────
 app.get('/api/internal-items', async (req, res) => {
   const { acon_brand_id } = req.query;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
   if (!acon_brand_id) {
     return res.status(400).json({ error: 'acon_brand_id es requerido' });
   }
 
   try {
+    const brandAccess = await checkBrandAccess(Number(acon_brand_id), username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     const result = await query(
       `SELECT * FROM acon_internal_items WHERE acon_brand_id = $1 ORDER BY created_at DESC`,
       [acon_brand_id]
@@ -761,11 +852,19 @@ app.get('/api/internal-items', async (req, res) => {
 // ── Insumos internos: Crear (Neon) ────────────────────────────────
 app.post('/api/internal-items', async (req, res) => {
   const { acon_brand_id, name, category, stock } = req.body;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
   if (!acon_brand_id || !name) {
     return res.status(400).json({ error: 'acon_brand_id y name son requeridos' });
   }
 
   try {
+    const brandAccess = await checkBrandAccess(acon_brand_id, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     const result = await query(
       `INSERT INTO acon_internal_items (acon_brand_id, name, category, stock, created_at, updated_at)
        VALUES ($1, $2, $3, $4, NOW(), NOW())
@@ -783,7 +882,9 @@ app.post('/api/internal-items', async (req, res) => {
 // ── Insumos internos: Actualizar Stock (Neon) ─────────────────────
 app.patch('/api/internal-items/:id', async (req, res) => {
   const { id } = req.params;
-  const { stock, username } = req.body;
+  const { stock } = req.body;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   if (stock === undefined) {
     return res.status(400).json({ error: 'stock es requerido' });
@@ -803,6 +904,15 @@ app.patch('/api/internal-items/:id', async (req, res) => {
     const newStock = Math.max(0, Number(stock));
     const delta = newStock - previousStock;
 
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
+    // Fetch user full name for log
+    const userRes = await query('SELECT first_name, last_name FROM acon_users WHERE username = $1', [username]);
+    const userFullName = userRes.rows.length > 0 ? `${userRes.rows[0].first_name} ${userRes.rows[0].last_name}` : username;
+
     const result = await query(
       `UPDATE acon_internal_items
        SET stock = $1, updated_at = NOW()
@@ -819,7 +929,7 @@ app.patch('/api/internal-items/:id', async (req, res) => {
       await query(
         `INSERT INTO acon_internal_history (acon_brand_id, internal_item_id, item_name, previous_stock, new_stock, delta, updated_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [brandId, Number(id), itemName, previousStock, newStock, delta, username || 'Sistema']
+        [brandId, Number(id), itemName, previousStock, newStock, delta, userFullName]
       );
     }
 
@@ -834,8 +944,21 @@ app.patch('/api/internal-items/:id', async (req, res) => {
 // ── Insumos internos: Eliminar (Neon) ─────────────────────────────
 app.delete('/api/internal-items/:id', async (req, res) => {
   const { id } = req.params;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   try {
+    const itemRes = await query('SELECT acon_brand_id FROM acon_internal_items WHERE id = $1', [id]);
+    if (itemRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Insumo no encontrado.' });
+    }
+    const brandId = itemRes.rows[0].acon_brand_id;
+
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     const result = await query(
       `DELETE FROM acon_internal_items WHERE id = $1 RETURNING *`,
       [id]
@@ -856,9 +979,20 @@ app.delete('/api/internal-items/:id', async (req, res) => {
 // Búsqueda de usuarios para colaboradores
 app.get('/api/users/search', async (req, res) => {
   const { q, brand_id } = req.query;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
   if (!q || typeof q !== 'string' || !q.trim()) {
     return res.json([]);
   }
+
+  if (brand_id) {
+    const brandAccess = await checkBrandAccess(Number(brand_id), username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+  }
+
   const searchPattern = `%${q.trim()}%`;
   try {
     let sql = `
@@ -894,7 +1028,15 @@ app.get('/api/users/search', async (req, res) => {
 // Obtener colaboradores
 app.get('/api/brands/:id/collaborators', async (req, res) => {
   const { id } = req.params;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
   try {
+    const brandAccess = await checkBrandAccess(id, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     const result = await query(
       `SELECT u.username, u.first_name, u.last_name 
        FROM acon_brand_collaborators c
@@ -913,22 +1055,25 @@ app.get('/api/brands/:id/collaborators', async (req, res) => {
 // Agregar colaborador (Owner only)
 app.post('/api/brands/:id/collaborators', async (req, res) => {
   const { id } = req.params;
-  const { username, owner_username } = req.body;
-  if (!username || !owner_username) {
-    return res.status(400).json({ error: 'username y owner_username son requeridos' });
+  const { username } = req.body;
+  const currentUsername = (req as AuthenticatedRequest).user?.username;
+  if (!currentUsername) return res.status(401).json({ error: 'Usuario no autenticado.' });
+  if (!username) {
+    return res.status(400).json({ error: 'username es requerido' });
   }
 
   try {
     // 1. Verificar que el solicitante sea el propietario
-    const ownerRes = await query('SELECT owner_username FROM acon_brands WHERE id = $1', [id]);
-    if (ownerRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Marca no encontrada.' });
-    }
-    if (ownerRes.rows[0].owner_username !== owner_username) {
+    const brandAccess = await checkBrandAccess(id, currentUsername);
+    if (!brandAccess.hasAccess || brandAccess.role !== 'owner') {
       return res.status(403).json({ error: 'Solo el propietario de la marca puede gestionar colaboradores.' });
     }
 
     // 2. Verificar que el colaborador no sea el mismo propietario
+    const ownerRes = await query('SELECT owner_username FROM acon_brands WHERE id = $1', [id]);
+    if (ownerRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Marca no encontrada.' });
+    }
     if (username.trim() === ownerRes.rows[0].owner_username) {
       return res.status(400).json({ error: 'El propietario no puede ser agregado como colaborador.' });
     }
@@ -957,19 +1102,13 @@ app.post('/api/brands/:id/collaborators', async (req, res) => {
 // Eliminar colaborador (Owner only)
 app.delete('/api/brands/:id/collaborators/:username', async (req, res) => {
   const { id, username } = req.params;
-  const { owner_username } = req.query;
-
-  if (!owner_username) {
-    return res.status(400).json({ error: 'owner_username es requerido' });
-  }
+  const currentUsername = (req as AuthenticatedRequest).user?.username;
+  if (!currentUsername) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   try {
     // Verificar que el solicitante sea el propietario
-    const ownerRes = await query('SELECT owner_username FROM acon_brands WHERE id = $1', [id]);
-    if (ownerRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Marca no encontrada.' });
-    }
-    if (ownerRes.rows[0].owner_username !== owner_username) {
+    const brandAccess = await checkBrandAccess(id, currentUsername);
+    if (!brandAccess.hasAccess || brandAccess.role !== 'owner') {
       return res.status(403).json({ error: 'Solo el propietario de la marca puede gestionar colaboradores.' });
     }
 
@@ -988,7 +1127,15 @@ app.delete('/api/brands/:id/collaborators/:username', async (req, res) => {
 // Obtener secciones con agregación de ventas
 app.get('/api/brands/:id/sections', async (req, res) => {
   const { id } = req.params;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
   try {
+    const brandAccess = await checkBrandAccess(id, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     const result = await query(
       `SELECT s.id, s.name, s.created_by, s.created_at, s.status, s.ended_at,
               COUNT(sl.id) as sales_count,
@@ -1022,12 +1169,24 @@ app.get('/api/brands/:id/sections', async (req, res) => {
 // Crear sección
 app.post('/api/brands/:id/sections', async (req, res) => {
   const { id } = req.params;
-  const { name, created_by } = req.body;
-  if (!name || !created_by) {
-    return res.status(400).json({ error: 'name y created_by son requeridos' });
+  const { name } = req.body;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
+  if (!name) {
+    return res.status(400).json({ error: 'name es requerido' });
   }
 
   try {
+    const brandAccess = await checkBrandAccess(id, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
+    // Fetch user full name
+    const userRes = await query('SELECT first_name, last_name FROM acon_users WHERE username = $1', [username]);
+    const created_by = userRes.rows.length > 0 ? `${userRes.rows[0].first_name} ${userRes.rows[0].last_name}` : username;
+
     const result = await query(
       `INSERT INTO acon_sections (acon_brand_id, name, created_by)
        VALUES ($1, $2, $3) RETURNING *`,
@@ -1043,22 +1202,31 @@ app.post('/api/brands/:id/sections', async (req, res) => {
 // Eliminar sección
 app.delete('/api/sections/:id', async (req, res) => {
   const { id } = req.params;
-  const { username } = req.query;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   try {
-    await query('BEGIN');
-
     // 1. Obtener la marca a la que pertenece la sección y su nombre
     const sectionRes = await query(
       'SELECT acon_brand_id, name FROM acon_sections WHERE id = $1',
       [id]
     );
     if (sectionRes.rows.length === 0) {
-      await query('ROLLBACK');
       return res.status(404).json({ error: 'Sección no encontrada.' });
     }
     const brandId = sectionRes.rows[0].acon_brand_id;
     const sectionName = sectionRes.rows[0].name;
+
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
+    // Fetch user full name
+    const userRes = await query('SELECT first_name, last_name FROM acon_users WHERE username = $1', [username]);
+    const userFullName = userRes.rows.length > 0 ? `${userRes.rows[0].first_name} ${userRes.rows[0].last_name}` : username;
+
+    await query('BEGIN');
 
     // 2. Obtener la marca para saber el tipo (Aourum o Local)
     const brandRes = await query('SELECT aourum_brand_id FROM acon_brands WHERE id = $1', [brandId]);
@@ -1131,7 +1299,7 @@ app.delete('/api/sections/:id', async (req, res) => {
             prevWarehouseStock,
             prevWarehouseStock + remainingStock,
             remainingStock,
-            `${username || 'Sistema'} (Fin de Feria: ${sectionName})`
+            `${userFullName} (Fin de Feria: ${sectionName})`
           ]
         );
       }
@@ -1149,10 +1317,63 @@ app.delete('/api/sections/:id', async (req, res) => {
   }
 });
 
+// Eliminar permanentemente una sección concluida (Owner only)
+app.delete('/api/sections/:id/delete', async (req, res) => {
+  const { id } = req.params;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
+  try {
+    // 1. Obtener la marca a la que pertenece la sección
+    const sectionRes = await query(
+      'SELECT acon_brand_id, status FROM acon_sections WHERE id = $1',
+      [id]
+    );
+    if (sectionRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Sección no encontrada.' });
+    }
+    const brandId = sectionRes.rows[0].acon_brand_id;
+    const status = sectionRes.rows[0].status;
+
+    // 2. Verificar que esté concluida
+    if (status !== 'ended') {
+      return res.status(400).json({ error: 'Solo se pueden eliminar ferias concluidas.' });
+    }
+
+    // 3. Verificar que el solicitante sea el propietario de la marca
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess || brandAccess.role !== 'owner') {
+      return res.status(403).json({ error: 'Solo el propietario de la marca puede eliminar ferias.' });
+    }
+
+    // 4. Eliminar permanentemente (las tablas hijas se eliminarán en cascada)
+    await query('DELETE FROM acon_sections WHERE id = $1', [id]);
+    
+    return res.json({ success: true, message: 'Feria eliminada permanentemente.' });
+  } catch (error) {
+    console.error('Error deleting section:', error);
+    return res.status(500).json({ error: 'Error al eliminar la feria permanentemente.' });
+  }
+});
+
 // Obtener estadísticas detalladas de una feria concluida
 app.get('/api/sections/:sectionId/stats', async (req, res) => {
   const { sectionId } = req.params;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
   try {
+    const brandIdRes = await query('SELECT acon_brand_id FROM acon_sections WHERE id = $1', [sectionId]);
+    if (brandIdRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Marca no encontrada para la sección' });
+    }
+    const brandId = brandIdRes.rows[0].acon_brand_id;
+
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     // 1. Obtener detalles de la sección
     const sectionRes = await query(
       'SELECT id, name, created_by, created_at, status, ended_at FROM acon_sections WHERE id = $1',
@@ -1193,11 +1414,6 @@ app.get('/api/sections/:sectionId/stats', async (req, res) => {
     const soldMap = new Map(soldRes.rows.map(r => [Number(r.product_id), Number(r.sold_qty)]));
 
     // 5. Obtener los nombres y precios base de los productos para consolidar
-    const brandIdRes = await query('SELECT acon_brand_id FROM acon_sections WHERE id = $1', [sectionId]);
-    if (brandIdRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Marca no encontrada para la sección' });
-    }
-    const brandId = brandIdRes.rows[0].acon_brand_id;
     const brandRes = await query('SELECT aourum_brand_id FROM acon_brands WHERE id = $1', [brandId]);
     const aourumBrandId = brandRes.rows[0].aourum_brand_id;
 
@@ -1266,6 +1482,9 @@ app.get('/api/sections/:sectionId/stats', async (req, res) => {
 // Obtener catálogo seleccionado para la sección
 app.get('/api/sections/:sectionId/products', async (req, res) => {
   const { sectionId } = req.params;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
   try {
     const sectionRes = await query(
       'SELECT acon_brand_id FROM acon_sections WHERE id = $1',
@@ -1275,7 +1494,12 @@ app.get('/api/sections/:sectionId/products', async (req, res) => {
       return res.status(404).json({ error: 'Sección no encontrada' });
     }
     const brandId = sectionRes.rows[0].acon_brand_id;
-    
+
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     // Obtener los product_ids asignados a la sección con precios personalizados
     const assignedRes = await query(
       'SELECT product_id, custom_price, stock FROM acon_section_products WHERE section_id = $1',
@@ -1351,7 +1575,9 @@ app.get('/api/sections/:sectionId/products', async (req, res) => {
 // Guardar catálogo seleccionado para la sección
 app.post('/api/sections/:sectionId/products', async (req, res) => {
   const { sectionId } = req.params;
-  const { products, username } = req.body;
+  const { products } = req.body;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   if (!Array.isArray(products)) {
     return res.status(400).json({ error: 'Debes proporcionar la lista de productos.' });
@@ -1364,19 +1590,27 @@ app.post('/api/sections/:sectionId/products', async (req, res) => {
   }));
 
   try {
-    await query('BEGIN');
-
     // 1. Obtener la marca a la que pertenece la sección y su tipo
     const sectionRes = await query(
       'SELECT acon_brand_id, name FROM acon_sections WHERE id = $1',
       [sectionId]
     );
     if (sectionRes.rows.length === 0) {
-      await query('ROLLBACK');
       return res.status(404).json({ error: 'Sección no encontrada' });
     }
     const brandId = sectionRes.rows[0].acon_brand_id;
     const sectionName = sectionRes.rows[0].name;
+
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
+    // Fetch user full name
+    const userRes = await query('SELECT first_name, last_name FROM acon_users WHERE username = $1', [username]);
+    const userFullName = userRes.rows.length > 0 ? `${userRes.rows[0].first_name} ${userRes.rows[0].last_name}` : username;
+
+    await query('BEGIN');
 
     const brandRes = await query('SELECT aourum_brand_id FROM acon_brands WHERE id = $1', [brandId]);
     const isAourum = brandRes.rows[0].aourum_brand_id !== null;
@@ -1478,7 +1712,7 @@ app.post('/api/sections/:sectionId/products', async (req, res) => {
               prevWarehouseStock,
               newWhStock,
               -diff,
-              `${username || 'Sistema'} (${diff > 0 ? 'Asignación' : 'Retorno'} Feria: ${sectionName})`
+              `${userFullName} (${diff > 0 ? 'Asignación' : 'Retorno'} Feria: ${sectionName})`
             ]
           );
         } else {
@@ -1508,7 +1742,7 @@ app.post('/api/sections/:sectionId/products', async (req, res) => {
               prevWarehouseStock,
               newWhStock,
               -diff,
-              `${username || 'Sistema'} (${diff > 0 ? 'Asignación' : 'Retorno'} Feria: ${sectionName})`
+              `${userFullName} (${diff > 0 ? 'Asignación' : 'Retorno'} Feria: ${sectionName})`
             ]
           );
         }
@@ -1555,7 +1789,7 @@ app.post('/api/sections/:sectionId/products', async (req, res) => {
               prevWarehouseStock,
               newWhStock,
               oldStock,
-              `${username || 'Sistema'} (Removido de Feria: ${sectionName})`
+              `${userFullName} (Removido de Feria: ${sectionName})`
             ]
           );
         } else {
@@ -1585,7 +1819,7 @@ app.post('/api/sections/:sectionId/products', async (req, res) => {
               prevWarehouseStock,
               newWhStock,
               oldStock,
-              `${username || 'Sistema'} (Removido de Feria: ${sectionName})`
+              `${userFullName} (Removido de Feria: ${sectionName})`
             ]
           );
         }
@@ -1614,7 +1848,15 @@ app.post('/api/sections/:sectionId/products', async (req, res) => {
 // Obtener historial de inventario por marca
 app.get('/api/brands/:brandId/inventory-history', async (req, res) => {
   const { brandId } = req.params;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
   try {
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     const result = await query(
       'SELECT * FROM acon_inventory_history WHERE acon_brand_id = $1 ORDER BY created_at DESC',
       [brandId]
@@ -1629,7 +1871,15 @@ app.get('/api/brands/:brandId/inventory-history', async (req, res) => {
 // Obtener historial de insumos por marca
 app.get('/api/brands/:brandId/internal-history', async (req, res) => {
   const { brandId } = req.params;
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
+
   try {
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a esta marca.' });
+    }
+
     const result = await query(
       'SELECT * FROM acon_internal_history WHERE acon_brand_id = $1 ORDER BY created_at DESC',
       [brandId]
@@ -1644,19 +1894,13 @@ app.get('/api/brands/:brandId/internal-history', async (req, res) => {
 // Eliminar un registro de historial de inventario (Owner only)
 app.delete('/api/brands/:brandId/inventory-history/:historyId', async (req, res) => {
   const { brandId, historyId } = req.params;
-  const { owner_username } = req.query;
-
-  if (!owner_username) {
-    return res.status(400).json({ error: 'owner_username es requerido' });
-  }
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   try {
     // 1. Verificar que el solicitante sea el propietario de la marca
-    const ownerRes = await query('SELECT owner_username FROM acon_brands WHERE id = $1', [brandId]);
-    if (ownerRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Marca no encontrada.' });
-    }
-    if (ownerRes.rows[0].owner_username !== owner_username) {
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess || brandAccess.role !== 'owner') {
       return res.status(403).json({ error: 'Solo el propietario de la marca puede eliminar del historial.' });
     }
 
@@ -1676,20 +1920,14 @@ app.delete('/api/brands/:brandId/inventory-history/:historyId', async (req, res)
 // Eliminar un registro de historial de insumos/interno (Owner only)
 app.delete('/api/brands/:brandId/internal-history/:historyId', async (req, res) => {
   const { brandId, historyId } = req.params;
-  const { owner_username } = req.query;
-
-  if (!owner_username) {
-    return res.status(400).json({ error: 'owner_username es requerido' });
-  }
+  const username = (req as AuthenticatedRequest).user?.username;
+  if (!username) return res.status(401).json({ error: 'Usuario no autenticado.' });
 
   try {
     // 1. Verificar que el solicitante sea el propietario de la marca
-    const ownerRes = await query('SELECT owner_username FROM acon_brands WHERE id = $1', [brandId]);
-    if (ownerRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Marca no encontrada.' });
-    }
-    if (ownerRes.rows[0].owner_username !== owner_username) {
-      return res.status(403).json({ error: 'Solo el propietario de la marca puede eliminar del historial.' });
+    const brandAccess = await checkBrandAccess(brandId, username);
+    if (!brandAccess.hasAccess || brandAccess.role !== 'owner') {
+      return res.status(403).json({ error: 'Solo el propietario de la marca puede eliminar del historial de insumos.' });
     }
 
     // 2. Eliminar de la tabla acon_internal_history

@@ -90,6 +90,49 @@ interface Collaborator {
   last_name: string;
 }
 
+interface InventoryHistoryLog {
+  id: number;
+  created_at: string;
+  product_name: string;
+  delta: number;
+  previous_stock: number;
+  new_stock: number;
+  updated_by: string;
+}
+
+interface InternalHistoryLog {
+  id: number;
+  created_at: string;
+  item_name: string;
+  delta: number;
+  previous_stock: number;
+  new_stock: number;
+  updated_by: string;
+}
+
+interface ConcludedProduct {
+  id: number;
+  name: string;
+  category?: string;
+  price: number;
+  sold_stock: number;
+  remaining_stock: number;
+}
+
+interface SaleItemResponse {
+  product_name: string;
+  unit_price: string | number;
+  quantity: number;
+}
+
+interface SaleResponse {
+  id: number;
+  created_at: string;
+  total: string | number;
+  created_by: string;
+  items: SaleItemResponse[];
+}
+
 type Tab = 'sales' | 'inventory';
 type SalesSubTab = 'sections' | 'concluded' | 'general_history';
 type SectionSubTab = 'counter' | 'history';
@@ -108,8 +151,8 @@ export default function Dashboard() {
   const navigate = useNavigate();
   
   // Brand & User identity
-  const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [currentFullName, setCurrentFullName] = useState<string | null>(null);
+  const [currentUser] = useState<string | null>(() => localStorage.getItem('acon_user'));
+  const [currentFullName] = useState<string | null>(() => localStorage.getItem('acon_user_name') || localStorage.getItem('acon_user'));
   const [brandId, setBrandId] = useState<string | null>(null);
   const [brand, setBrand] = useState<BrandDetails | null>(null);
   const [loadingBrand, setLoadingBrand] = useState(true);
@@ -152,14 +195,14 @@ export default function Dashboard() {
     total_revenue: number;
     total_remaining_stock: number;
     total_sold_stock: number;
-    products: any[];
+    products: ConcludedProduct[];
   } | null>(null);
 
   // Warehouse Histories State
   const [inventorySubTab, setInventorySubTab] = useState<'list' | 'history'>('list');
   const [internalSubTab, setInternalSubTab] = useState<'list' | 'history'>('list');
-  const [inventoryHistory, setInventoryHistory] = useState<any[]>([]);
-  const [internalHistory, setInternalHistory] = useState<any[]>([]);
+  const [inventoryHistory, setInventoryHistory] = useState<InventoryHistoryLog[]>([]);
+  const [internalHistory, setInternalHistory] = useState<InternalHistoryLog[]>([]);
   const [loadingInventoryHistory, setLoadingInventoryHistory] = useState(false);
   const [loadingInternalHistory, setLoadingInternalHistory] = useState(false);
   
@@ -227,95 +270,7 @@ export default function Dashboard() {
     });
   };
 
-  // Initial Auth & Brand Check
-  useEffect(() => {
-    const user = localStorage.getItem('acon_user');
-    const name = localStorage.getItem('acon_user_name');
-    const searchParams = new URLSearchParams(window.location.search);
-    const bId = searchParams.get('brandId');
 
-    if (!user) {
-      navigate('/auth');
-      return;
-    }
-
-    setCurrentUser(user);
-    setCurrentFullName(name || user);
-
-    if (!bId) {
-      navigate('/select-brand');
-      return;
-    }
-
-    setBrandId(bId);
-    fetchBrandDetails(bId, user);
-  }, []);
-
-  // Sync data depending on active views
-  useEffect(() => {
-    if (!brandId) return;
-    
-    if (activeTab === 'sales') {
-      if (salesSubTab === 'sections') {
-        fetchSections(brandId);
-      } else if (salesSubTab === 'general_history') {
-        fetchSalesHistory(brandId); // General global history
-        fetchSections(brandId); // To display per-section sales contribution
-      }
-    } else if (activeTab === 'inventory') {
-      fetchInternalInventory(brandId);
-      fetchProducts(brandId);
-      fetchInventoryHistory(brandId);
-      fetchInternalHistory(brandId);
-      if (brand?.role === 'owner') {
-        fetchCollaborators(brandId);
-      }
-    }
-  }, [activeTab, salesSubTab, brandId, brand?.type, brand?.role]);
-
-  // Sync section sales history & active products when entering a section
-  useEffect(() => {
-    if (!selectedSection) return;
-    fetchSectionProducts(String(selectedSection.id));
-    fetchSectionSalesHistory(String(selectedSection.id));
-  }, [selectedSection]);
-
-  // Bloquear scroll del fondo cuando hay overlays/modales activos
-  useEffect(() => {
-    if (stockModal.isOpen || showCartMobile || !!selectedConcludedStats) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [stockModal.isOpen, showCartMobile, selectedConcludedStats]);
-
-  // Debounced search for collaborators
-  useEffect(() => {
-    if (!newCollaboratorUsername.trim() || !brandId) {
-      setSearchUsers([]);
-      return;
-    }
-
-    const delayDebounceFn = setTimeout(async () => {
-      setLoadingSearchUsers(true);
-      try {
-        const res = await fetch(`${API_BASE}/users/search?q=${encodeURIComponent(newCollaboratorUsername.trim())}&brand_id=${brandId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setSearchUsers(data);
-        }
-      } catch (e) {
-        console.error('Error searching users:', e);
-      } finally {
-        setLoadingSearchUsers(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [newCollaboratorUsername, brandId]);
 
   const fetchBrandDetails = async (id: string, user: string) => {
     setLoadingBrand(true);
@@ -332,8 +287,9 @@ export default function Dashboard() {
       } else {
         setActiveTab('sales');
       }
-    } catch (err: any) {
-      setError(err.message || 'Error al conectar con el servidor.');
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Error al conectar con el servidor.';
+      setError(errorMsg);
       setTimeout(() => navigate('/select-brand'), 3000);
     } finally {
       setLoadingBrand(false);
@@ -381,7 +337,7 @@ export default function Dashboard() {
         const priceMap: Record<number, number | null> = {};
         const stockMap: Record<number, number> = {};
         if (Array.isArray(data.customPrices)) {
-          data.customPrices.forEach((item: any) => {
+          data.customPrices.forEach((item: { product_id: number; custom_price: number | null; stock?: number }) => {
             priceMap[item.product_id] = item.custom_price;
             stockMap[item.product_id] = item.stock || 0;
           });
@@ -511,12 +467,12 @@ export default function Dashboard() {
       const res = await fetch(`${API_BASE}/sales?acon_brand_id=${id}`);
       if (res.ok) {
         const data = await res.json();
-        const formatted = data.map((sale: any) => ({
+        const formatted = data.map((sale: SaleResponse) => ({
           id: `SALE-${sale.id}`,
           date: new Date(sale.created_at).toLocaleString('es-PE'),
           total: Number(sale.total),
           created_by: sale.created_by,
-          items: sale.items.map((item: any) => ({
+          items: sale.items.map((item: SaleItemResponse) => ({
             product_name: item.product_name,
             unit_price: Number(item.unit_price),
             quantity: item.quantity
@@ -538,12 +494,12 @@ export default function Dashboard() {
       const res = await fetch(`${API_BASE}/sales?acon_brand_id=${brandId}&section_id=${sectionId}`);
       if (res.ok) {
         const data = await res.json();
-        const formatted = data.map((sale: any) => ({
-          id: `SALE-${sale.id}`,
+        const formatted = data.map((sale: SaleResponse, index: number) => ({
+          id: `SALE-${data.length - index}`,
           date: new Date(sale.created_at).toLocaleString('es-PE'),
           total: Number(sale.total),
           created_by: sale.created_by,
-          items: sale.items.map((item: any) => ({
+          items: sale.items.map((item: SaleItemResponse) => ({
             product_name: item.product_name,
             unit_price: Number(item.unit_price),
             quantity: item.quantity
@@ -557,6 +513,94 @@ export default function Dashboard() {
       setLoadingHistory(false);
     }
   };
+
+  // Initial Auth & Brand Check
+  useEffect(() => {
+    const user = localStorage.getItem('acon_user');
+    const searchParams = new URLSearchParams(window.location.search);
+    const bId = searchParams.get('brandId');
+
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+
+    if (!bId) {
+      navigate('/select-brand');
+      return;
+    }
+
+    setBrandId(bId);
+    fetchBrandDetails(bId, user);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync data depending on active views
+  useEffect(() => {
+    if (!brandId) return;
+    
+    if (activeTab === 'sales') {
+      if (salesSubTab === 'sections') {
+        fetchSections(brandId);
+      } else if (salesSubTab === 'general_history') {
+        fetchSalesHistory(brandId); // General global history
+        fetchSections(brandId); // To display per-section sales contribution
+      }
+    } else if (activeTab === 'inventory') {
+      fetchInternalInventory(brandId);
+      fetchProducts(brandId);
+      fetchInventoryHistory(brandId);
+      fetchInternalHistory(brandId);
+      if (brand?.role === 'owner') {
+        fetchCollaborators(brandId);
+      }
+    }
+  }, [activeTab, salesSubTab, brandId, brand?.type, brand?.role]);
+
+  // Sync section sales history & active products when entering a section
+  useEffect(() => {
+    if (!selectedSection) return;
+    fetchSectionProducts(String(selectedSection.id));
+    fetchSectionSalesHistory(String(selectedSection.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSection]);
+
+  // Bloquear scroll del fondo cuando hay overlays/modales activos
+  useEffect(() => {
+    if (stockModal.isOpen || showCartMobile || !!selectedConcludedStats) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [stockModal.isOpen, showCartMobile, selectedConcludedStats]);
+
+  // Debounced search for collaborators
+  useEffect(() => {
+    if (!newCollaboratorUsername.trim() || !brandId) {
+      setSearchUsers([]);
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      setLoadingSearchUsers(true);
+      try {
+        const res = await fetch(`${API_BASE}/users/search?q=${encodeURIComponent(newCollaboratorUsername.trim())}&brand_id=${brandId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSearchUsers(data);
+        }
+      } catch (e) {
+        console.error('Error searching users:', e);
+      } finally {
+        setLoadingSearchUsers(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [newCollaboratorUsername, brandId]);
 
   const handleLogout = () => {
     localStorage.removeItem('acon_user');
@@ -638,7 +682,7 @@ export default function Dashboard() {
         const errData = await res.json();
         setCheckoutError(errData.error || 'Error al registrar la venta');
       }
-    } catch (e) {
+    } catch {
       setCheckoutError('Error de red al registrar la venta');
     }
   };
@@ -771,7 +815,7 @@ export default function Dashboard() {
       } else {
         setCollaboratorError(data.error || 'Error al agregar colaborador');
       }
-    } catch (e) {
+    } catch {
       setCollaboratorError('Error de red al agregar colaborador.');
     } finally {
       setAddingCollaborator(false);
@@ -818,7 +862,7 @@ export default function Dashboard() {
         const data = await res.json();
         setCollaboratorError(data.error || 'Error al remover colaborador.');
       }
-    } catch (e) {
+    } catch {
       setCollaboratorError('Error de red.');
     }
   };
@@ -909,6 +953,27 @@ export default function Dashboard() {
     } catch (e) {
       console.error(e);
       alert('Error de red al cargar estadísticas.');
+    }
+  };
+
+  const handleDeleteConcludedSection = async (id: number) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar permanentemente esta feria concluida y todo su historial de ventas? Esta acción no se puede deshacer.')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/sections/${id}/delete`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        if (brand) fetchSections(String(brand.id));
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Error al eliminar la feria.');
+      }
+    } catch (e) {
+      console.error('Error deleting section:', e);
+      alert('Error de conexión al eliminar la feria.');
     }
   };
 
@@ -1360,13 +1425,25 @@ export default function Dashboard() {
                                     <p className="text-sm font-black text-emerald-400 mt-1">S/. {sec.total_sales.toFixed(2)}</p>
                                   </div>
                                   
-                                  <button
-                                    onClick={() => handleOpenConcludedStats(sec)}
-                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.08] text-slate-300 hover:text-white text-xs font-semibold cursor-pointer transition-all"
-                                  >
-                                    <BarChart3 className="w-3.5 h-3.5" />
-                                    <span>Ver Reporte</span>
-                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => handleOpenConcludedStats(sec)}
+                                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.08] text-slate-300 hover:text-white text-xs font-semibold cursor-pointer transition-all"
+                                    >
+                                      <BarChart3 className="w-3.5 h-3.5" />
+                                      <span>Ver Reporte</span>
+                                    </button>
+
+                                    {brand?.role === 'owner' && (
+                                      <button
+                                        onClick={() => handleDeleteConcludedSection(sec.id)}
+                                        className="flex items-center justify-center p-2 rounded-xl border border-red-500/10 bg-red-500/5 hover:bg-red-500/15 text-red-400 hover:text-red-300 cursor-pointer transition-all"
+                                        title="Eliminar Feria"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             ))}

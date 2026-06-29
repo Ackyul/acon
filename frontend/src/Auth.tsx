@@ -57,13 +57,15 @@ export default function Auth() {
       }
 
       // Guardar usuario en localStorage
+      localStorage.setItem('acon_token', data.token);
       localStorage.setItem('acon_user', data.username);
       localStorage.setItem('acon_user_name', `${data.first_name} ${data.last_name}`);
       
       // Redirigir a selección de marca
       navigate('/select-brand');
-    } catch (err: any) {
-      setError(err.message || 'Error de conexión con el servidor.');
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Error de conexión con el servidor.';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
